@@ -15,31 +15,123 @@ from utils.risk_models import (
     calculate_altman_z_score, calculate_beneish_m_score,
     calculate_piotroski_f_score, integrated_risk_assessment
 )
-from data.sample_data import SAMPLE_COMPANIES, INDUSTRY_BENCHMARKS, get_percentile
+from data.sample_data import (
+    SAMPLE_COMPANIES, INDUSTRY_BENCHMARKS, get_percentile,
+    COMPANY_SIZES, detect_company_size, get_size_adjusted_benchmarks,
+)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # APP CONFIGURATION
 # ══════════════════════════════════════════════════════════════════════════════
 st.set_page_config(
     page_title="Financial Health Assessment Tool",
-    page_icon="📊",
+    page_icon="F",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# Custom CSS
+# Clean, minimal, professional CSS — Aptos font
 st.markdown("""
 <style>
-    .stMetric { background-color: #f8f9fa; padding: 10px; border-radius: 8px; }
-    .risk-critical { background-color: #fdedec; padding: 15px; border-radius: 8px; border-left: 4px solid #e74c3c; margin: 10px 0; }
-    .risk-warning { background-color: #fef9e7; padding: 15px; border-radius: 8px; border-left: 4px solid #f39c12; margin: 10px 0; }
-    .risk-good { background-color: #eafaf1; padding: 15px; border-radius: 8px; border-left: 4px solid #27ae60; margin: 10px 0; }
-    .insight-box { padding: 15px; border-radius: 8px; margin: 10px 0; }
-    div[data-testid="stSidebar"] { background-color: #1b4f72; }
-    div[data-testid="stSidebar"] .stMarkdown p { color: white; }
-    div[data-testid="stSidebar"] .stMarkdown h1 { color: white; }
-    div[data-testid="stSidebar"] .stMarkdown h2 { color: #d4e6f1; }
-    div[data-testid="stSidebar"] .stMarkdown h3 { color: #d4e6f1; }
+    html, body, [class*="css"], .stMarkdown, .stButton button,
+    [data-testid="stMetricLabel"], [data-testid="stMetricValue"],
+    .stSelectbox, .stRadio, .stTextInput, .stNumberInput {
+        font-family: 'Aptos', 'Calibri', 'Segoe UI', -apple-system, sans-serif !important;
+    }
+
+    /* Sidebar nav buttons */
+    div[data-testid="stSidebar"] .stButton > button {
+        width: 100%; text-align: center; padding: 10px 16px; margin: 2px 0;
+        border: none !important; border-radius: 6px; background: transparent !important;
+        color: #c9c9c9 !important; font-size: 0.9rem; font-weight: 500; cursor: pointer;
+        font-family: 'Aptos', 'Calibri', 'Segoe UI', sans-serif !important;
+    }
+    div[data-testid="stSidebar"] .stButton > button:hover {
+        background: #2a2a2a !important; color: #ffffff !important;
+    }
+
+    /* Sidebar */
+    div[data-testid="stSidebar"] { background-color: #1a1a1a; }
+    div[data-testid="stSidebar"] .stMarkdown p { color: #c9c9c9; font-size: 0.9rem; }
+    div[data-testid="stSidebar"] .stMarkdown h1 { color: #ffffff; font-weight: 700; letter-spacing: -0.02em; }
+    div[data-testid="stSidebar"] .stMarkdown h2 { color: #e0e0e0; font-weight: 600; }
+    div[data-testid="stSidebar"] .stMarkdown h3 { color: #b0b0b0; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.08em; }
+
+    /* Metric cards */
+    .stMetric {
+        background-color: #fafafa;
+        padding: 16px;
+        border-radius: 8px;
+        border: 1px solid #e8e8e8;
+    }
+    [data-testid="stMetricLabel"] { font-weight: 600; color: #333333; font-size: 0.85rem; }
+    [data-testid="stMetricValue"] { font-weight: 700; color: #1a1a1a; }
+
+    /* Risk / insight boxes */
+    .risk-critical {
+        background-color: #fff5f5;
+        padding: 16px 20px;
+        border-radius: 8px;
+        border-left: 3px solid #e74c3c;
+        margin: 12px 0;
+        font-size: 0.92rem;
+    }
+    .risk-warning {
+        background-color: #fffbf0;
+        padding: 16px 20px;
+        border-radius: 8px;
+        border-left: 3px solid #f5a623;
+        margin: 12px 0;
+        font-size: 0.92rem;
+    }
+    .risk-good {
+        background-color: #f0faf4;
+        padding: 16px 20px;
+        border-radius: 8px;
+        border-left: 3px solid #00c805;
+        margin: 12px 0;
+        font-size: 0.92rem;
+    }
+    .insight-box {
+        padding: 16px 20px;
+        border-radius: 8px;
+        margin: 12px 0;
+        background-color: #f8f8f8;
+        border: 1px solid #e8e8e8;
+        font-size: 0.92rem;
+    }
+
+    /* Status indicator dots */
+    .status-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 6px;
+        vertical-align: middle;
+    }
+    .dot-green { background-color: #00c805; }
+    .dot-yellow { background-color: #f5a623; }
+    .dot-red { background-color: #e74c3c; }
+    .dot-blue { background-color: #5ac8fa; }
+    .dot-gray { background-color: #b0b0b0; }
+
+    /* Section headers */
+    h1 { font-weight: 700; color: #1a1a1a; letter-spacing: -0.02em; }
+    h2 { font-weight: 600; color: #1a1a1a; letter-spacing: -0.01em; }
+    h3 { font-weight: 600; color: #333333; }
+
+    /* Tabs */
+    .stTabs [data-baseweb="tab-list"] { gap: 0; }
+    .stTabs [data-baseweb="tab"] {
+        font-weight: 500;
+        font-size: 0.9rem;
+        padding: 10px 24px;
+        font-family: 'Aptos', 'Calibri', 'Segoe UI', sans-serif !important;
+    }
+
+    /* Dividers */
+    hr { border: none; border-top: 1px solid #e8e8e8; margin: 24px 0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -56,31 +148,71 @@ if "industry" not in st.session_state:
     st.session_state.industry = INDUSTRIES[0]
 if "ratios" not in st.session_state:
     st.session_state.ratios = None
+if "company_size" not in st.session_state:
+    st.session_state.company_size = COMPANY_SIZES[2]  # default Mid-Cap
+if "company_name" not in st.session_state:
+    st.session_state.company_name = None
+if "load_source" not in st.session_state:
+    st.session_state.load_source = None  # "sample" or "manual"
+if "current_year_label" not in st.session_state:
+    st.session_state.current_year_label = None
+if "prior_year_label" not in st.session_state:
+    st.session_state.prior_year_label = None
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SIDEBAR NAVIGATION
 # ══════════════════════════════════════════════════════════════════════════════
+# ── Page state ──────────────────────────────────────────────────────────────
+if "current_page" not in st.session_state:
+    st.session_state.current_page = "Executive Report"
+
+_PAGES = ["Executive Report", "Financial Ratios", "Benchmarking",
+          "DCF Valuation", "Risk Assessment", "Data Options"]
+
 with st.sidebar:
-    st.markdown("# 📊 Financial Health Tool")
+    st.markdown("# Financial Health Tool")
     st.markdown("---")
-    page = st.radio(
-        "Navigation",
-        ["🏠 Data Input", "📈 Ratio Dashboard", "🎯 Benchmarking",
-         "💰 DCF Valuation", "⚠️ Risk Assessment", "📋 Executive Report"],
-        label_visibility="collapsed",
-    )
+
+    # ── Loaded Company ──────────────────────────────────────────────────────
+    # Show loaded status above the label
+    _yr_label = st.session_state.current_year_label or ""
+    _yr_line = f"<br><b>Year:</b> {_yr_label}" if _yr_label else ""
+    if st.session_state.company_name:
+        st.markdown(f'<div style="background:#1e3a1e;color:#00c805;padding:12px 14px;border-radius:6px;'
+                    f'font-size:1.25rem;margin:0 0 4px 0;font-weight:700;text-align:left;'
+                    f'font-family:Aptos,Calibri,sans-serif;">'
+                    f'{st.session_state.company_name}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="color:#000000;font-size:1rem;margin:0 0 8px 2px;font-family:Aptos,Calibri,sans-serif;">'
+                    f'<b>Industry:</b> {st.session_state.industry}<br>'
+                    f'<b>Size:</b> {st.session_state.company_size}{_yr_line}</div>', unsafe_allow_html=True)
+    elif st.session_state.financial_data is not None:
+        st.markdown('<div style="background:#1e3a1e;color:#00c805;padding:12px 14px;border-radius:6px;'
+                    'font-size:1.25rem;margin:0 0 4px 0;font-weight:700;text-align:left;'
+                    'font-family:Aptos,Calibri,sans-serif;">'
+                    'Manually loaded</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="color:#000000;font-size:1rem;margin:0 0 8px 2px;font-family:Aptos,Calibri,sans-serif;">'
+                    f'<b>Industry:</b> {st.session_state.industry}<br>'
+                    f'<b>Size:</b> {st.session_state.company_size}{_yr_line}</div>', unsafe_allow_html=True)
+
     st.markdown("---")
-    st.markdown("### Quick Load")
-    sample = st.selectbox("Load sample company:", ["— Select —"] + list(SAMPLE_COMPANIES.keys()))
-    if sample != "— Select —":
-        company = SAMPLE_COMPANIES[sample]
-        st.session_state.financial_data = company["current"]
-        st.session_state.prior_data = company["prior"]
-        st.session_state.industry = company["industry"]
-        st.success(f"Loaded: {sample}")
+
+    # ── Navigation buttons ──────────────────────────────────────────────────
+    for p in _PAGES:
+        if p == st.session_state.current_page:
+            st.markdown(
+                f'<div style="background:#1e3a1e;color:#00c805;padding:10px 16px;margin:0 0 14px 0;'
+                f'border-radius:6px;border-left:3px solid #00c805;font-size:1rem;'
+                f'text-align:center;font-weight:500;font-family:Aptos,Calibri,Segoe UI,sans-serif;">{p}</div>',
+                unsafe_allow_html=True)
+        else:
+            if st.button(p, key=f"nav_{p}", use_container_width=True):
+                st.session_state.current_page = p
+                st.rerun()
 
     st.markdown("---")
     st.markdown("*ACG6415 — AUDIT Project*")
+
+page = st.session_state.current_page
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -111,40 +243,112 @@ def make_gauge(value, title, min_val=0, max_val=5, thresholds=None):
     
     if thresholds is None:
         thresholds = {"red": max_val * 0.3, "yellow": max_val * 0.6}
-    
+
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
         value=value,
-        title={"text": title, "font": {"size": 14}},
-        number={"font": {"size": 24}},
+        title={"text": title, "font": {"size": 13, "family": "Aptos, Calibri, sans-serif", "color": "#333"}},
+        number={"font": {"size": 22, "family": "Aptos, Calibri, sans-serif", "color": "#1a1a1a"}},
         gauge={
-            "axis": {"range": [min_val, max_val]},
-            "bar": {"color": "#1b4f72"},
+            "axis": {"range": [min_val, max_val], "tickcolor": "#ccc"},
+            "bar": {"color": "#1a1a1a"},
             "steps": [
-                {"range": [min_val, thresholds.get("red", max_val * 0.3)], "color": "#fadbd8"},
-                {"range": [thresholds.get("red", max_val * 0.3), thresholds.get("yellow", max_val * 0.6)], "color": "#fef9e7"},
-                {"range": [thresholds.get("yellow", max_val * 0.6), max_val], "color": "#d5f5e3"},
+                {"range": [min_val, thresholds.get("red", max_val * 0.3)], "color": "#fff5f5"},
+                {"range": [thresholds.get("red", max_val * 0.3), thresholds.get("yellow", max_val * 0.6)], "color": "#fffbf0"},
+                {"range": [thresholds.get("yellow", max_val * 0.6), max_val], "color": "#f0faf4"},
             ],
+            "borderwidth": 0,
         }
     ))
-    fig.update_layout(height=200, margin=dict(l=20, r=20, t=40, b=10))
+    fig.update_layout(height=200, margin=dict(l=20, r=20, t=40, b=10), font=dict(family="Aptos, Calibri, sans-serif"))
     return fig
+
+
+def _get_industry_peers(industry, exclude_name=None):
+    """Return dict of sample companies in the same industry, excluding current."""
+    peers = {}
+    for name, co in SAMPLE_COMPANIES.items():
+        if co["industry"] == industry:
+            if exclude_name and exclude_name in name:
+                continue
+            peers[name] = co
+    return peers
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE 1: DATA INPUT
 # ══════════════════════════════════════════════════════════════════════════════
-if page == "🏠 Data Input":
-    st.title("📊 Financial Data Input")
-    st.markdown("Upload financial statements or enter data manually. You can also load a sample company from the sidebar.")
-    
-    st.session_state.industry = st.selectbox("Select Industry for Benchmarking:", INDUSTRIES, 
+if page == "Data Options":
+    st.title("Financial Data Input")
+    st.markdown("Upload financial statements or enter data manually, or load a sample company below.")
+
+    # ── Load Sample Company ─────────────────────────────────────────────────
+    st.markdown("### Load Sample Company")
+
+    _grouped_options = ["— Select —"]
+    _seen_industries = []
+    for name, comp in SAMPLE_COMPANIES.items():
+        ind = comp["industry"]
+        if ind not in _seen_industries:
+            _seen_industries.append(ind)
+    for ind in _seen_industries:
+        _grouped_options.append(f"── {ind} ──")
+        for name, comp in SAMPLE_COMPANIES.items():
+            if comp["industry"] == ind:
+                _grouped_options.append(name)
+
+    if "prev_sample" not in st.session_state:
+        st.session_state.prev_sample = "— Select —"
+
+    sample = st.selectbox("Sample companies:", _grouped_options,
+                          index=_grouped_options.index(st.session_state.prev_sample)
+                          if st.session_state.prev_sample in _grouped_options else 0,
+                          label_visibility="collapsed")
+
+    if sample and not sample.startswith("—") and not sample.startswith("──"):
+        if sample != st.session_state.prev_sample:
+            company = SAMPLE_COMPANIES[sample]
+            st.session_state.financial_data = company["current"]
+            st.session_state.prior_data = company["prior"]
+            st.session_state.industry = company["industry"]
+            st.session_state.company_name = sample.split("(")[0].strip() if "(" in sample else sample
+            st.session_state.load_source = "sample"
+            st.session_state.current_year_label = company.get("current_year", "2023")
+            st.session_state.prior_year_label = company.get("prior_year", "2022")
+            st.session_state.prev_sample = sample
+            st.rerun()
+    else:
+        st.session_state.prev_sample = sample
+
+    # Show year selector if a sample company is loaded
+    if st.session_state.load_source == "sample" and st.session_state.prev_sample in SAMPLE_COMPANIES:
+        _loaded_co = SAMPLE_COMPANIES[st.session_state.prev_sample]
+        _cy = _loaded_co.get("current_year", "2023")
+        _py = _loaded_co.get("prior_year", "2022")
+        _year_choice = st.radio("Analyze year:", [_cy, _py], horizontal=True, key="sample_year_choice")
+        if _year_choice == _py:
+            st.session_state.financial_data = _loaded_co["prior"]
+            st.session_state.prior_data = _loaded_co["current"]
+            st.session_state.current_year_label = _py
+            st.session_state.prior_year_label = _cy
+        else:
+            st.session_state.financial_data = _loaded_co["current"]
+            st.session_state.prior_data = _loaded_co["prior"]
+            st.session_state.current_year_label = _cy
+            st.session_state.prior_year_label = _py
+
+    st.markdown("---")
+
+    # ── Manual Upload ────────────────────────────────────────────────────────
+    st.markdown("### Load Manual CSV or XLSX File")
+
+    st.session_state.industry = st.selectbox("Select Industry for Benchmarking:", INDUSTRIES,
                                               index=INDUSTRIES.index(st.session_state.industry))
-    
-    tab1, tab2 = st.tabs(["📁 Upload File", "✏️ Manual Entry"])
+
+    tab1, tab2 = st.tabs(["Upload File", "Manual Entry"])
     
     with tab1:
-        st.markdown("Upload a CSV or Excel file with financial statement data.")
+        st.markdown("Upload a CSV or Excel file. The file should have a **Field** column and one or more year columns (e.g. 2024, 2023).")
         uploaded = st.file_uploader("Upload Financial Data", type=["csv", "xlsx"])
         if uploaded:
             try:
@@ -152,8 +356,195 @@ if page == "🏠 Data Input":
                     df = pd.read_csv(uploaded)
                 else:
                     df = pd.read_excel(uploaded)
-                st.dataframe(df, use_container_width=True)
-                st.info("Map your columns to the required fields below, or use manual entry for more control.")
+
+                # Detect year columns (any 4-digit header)
+                year_cols = sorted(
+                    [str(c) for c in df.columns if str(c).strip().isdigit() and len(str(c).strip()) == 4],
+                    reverse=True,
+                )
+
+                if not year_cols or "Field" not in df.columns:
+                    st.error("CSV must have a 'Field' column and at least one 4-digit year column (e.g. 2024).")
+                    st.dataframe(df, use_container_width=True)
+                    st.stop()
+
+                # Year selection dropdowns — default to two most recent
+                ycol1, ycol2 = st.columns(2)
+                with ycol1:
+                    current_year = st.selectbox("Current Year", year_cols, index=0)
+                with ycol2:
+                    prior_options = [y for y in year_cols if y != current_year]
+                    prior_year = st.selectbox(
+                        "Prior Year",
+                        prior_options,
+                        index=0 if prior_options else None,
+                        disabled=len(prior_options) == 0,
+                    ) if prior_options else None
+
+                # Normalise Field column to lowercase/underscore keys
+                df["Field"] = df["Field"].astype(str).str.strip()
+
+                # Build a mapping from CSV field names to internal keys
+                FIELD_MAP = {
+                    # Accept both human-readable and snake_case forms
+                    "total_current_assets": "total_current_assets",
+                    "total current assets": "total_current_assets",
+                    "total_current_liabilities": "total_current_liabilities",
+                    "total current liabilities": "total_current_liabilities",
+                    "total_assets": "total_assets",
+                    "total assets": "total_assets",
+                    "total_liabilities": "total_liabilities",
+                    "total liabilities": "total_liabilities",
+                    "total_equity": "total_equity",
+                    "total equity": "total_equity",
+                    "cash": "cash",
+                    "cash & equivalents": "cash",
+                    "cash and equivalents": "cash",
+                    "inventory": "inventory",
+                    "accounts_receivable": "accounts_receivable",
+                    "accounts receivable": "accounts_receivable",
+                    "accounts_payable": "accounts_payable",
+                    "accounts payable": "accounts_payable",
+                    "long_term_debt": "long_term_debt",
+                    "long term debt": "long_term_debt",
+                    "retained_earnings": "retained_earnings",
+                    "retained earnings": "retained_earnings",
+                    "market_cap": "market_cap",
+                    "market capitalization": "market_cap",
+                    "market cap": "market_cap",
+                    "ppe_net": "ppe_net",
+                    "ppe net": "ppe_net",
+                    "intangibles": "intangibles",
+                    "shares_outstanding": "shares_outstanding",
+                    "shares outstanding": "shares_outstanding",
+                    "revenue": "revenue",
+                    "cogs": "cogs",
+                    "cost of goods sold": "cogs",
+                    "operating_expenses": "operating_expenses",
+                    "operating expenses": "operating_expenses",
+                    "operating_income": "operating_income",
+                    "operating income": "operating_income",
+                    "ebit": "ebit",
+                    "interest_expense": "interest_expense",
+                    "interest expense": "interest_expense",
+                    "tax_expense": "tax_expense",
+                    "tax expense": "tax_expense",
+                    "net_income": "net_income",
+                    "net income": "net_income",
+                    "depreciation": "depreciation",
+                    "depreciation & amortization": "depreciation",
+                    "sga_expense": "sga_expense",
+                    "sga expense": "sga_expense",
+                    "operating_cash_flow": "operating_cash_flow",
+                    "operating cash flow": "operating_cash_flow",
+                    "capital_expenditures": "capital_expenditures",
+                    "capital expenditures": "capital_expenditures",
+                    "capex": "capital_expenditures",
+                }
+
+                def _parse_year(dataframe, year_col):
+                    """Parse a single year column into a financial_data dict."""
+                    result = {}
+                    for _, row in dataframe.iterrows():
+                        field_raw = str(row["Field"]).strip().lower()
+                        key = FIELD_MAP.get(field_raw)
+                        if key:
+                            result[key] = pd.to_numeric(row[year_col], errors="coerce") or 0
+                    # Ensure ebit mirrors operating_income if only one was provided
+                    if "operating_income" in result and "ebit" not in result:
+                        result["ebit"] = result["operating_income"]
+                    elif "ebit" in result and "operating_income" not in result:
+                        result["operating_income"] = result["ebit"]
+                    return result
+
+                # Parse current and prior year
+                current_data = _parse_year(df, current_year)
+                prior_data = _parse_year(df, prior_year) if prior_year else None
+
+                # ── Industry selector ──
+                # Auto-detect from CSV row if present
+                csv_industry = None
+                industry_row = df[df["Field"].str.strip().str.lower() == "industry"]
+                if not industry_row.empty:
+                    ind_value = str(industry_row.iloc[0][current_year]).strip()
+                    if ind_value and ind_value.lower() != "nan" and ind_value in INDUSTRIES:
+                        csv_industry = ind_value
+
+                default_ind_idx = INDUSTRIES.index(csv_industry) if csv_industry else 0
+                upload_industry = st.selectbox(
+                    "Industry",
+                    INDUSTRIES,
+                    index=default_ind_idx,
+                    key="upload_industry",
+                )
+
+                # ── Company Size selector ──
+                # Auto-detect from CSV row, else from revenue
+                csv_size = None
+                size_row = df[df["Field"].str.strip().str.lower() == "company_size"]
+                if not size_row.empty:
+                    size_val = str(size_row.iloc[0][current_year]).strip()
+                    if size_val and size_val.lower() != "nan" and size_val in COMPANY_SIZES:
+                        csv_size = size_val
+
+                if csv_size:
+                    detected_size = csv_size
+                else:
+                    rev = current_data.get("revenue", 0) or 0
+                    detected_size = detect_company_size(rev)
+
+                default_size_idx = COMPANY_SIZES.index(detected_size)
+                upload_size = st.selectbox(
+                    "Company Size",
+                    COMPANY_SIZES,
+                    index=default_size_idx,
+                    key="upload_size",
+                )
+
+                # Check for a company name row
+                csv_company_name = None
+                name_row = df[df["Field"].str.strip().str.lower().isin(["company_name", "company name", "company"])]
+                if not name_row.empty:
+                    name_val = str(name_row.iloc[0][current_year]).strip()
+                    if name_val and name_val.lower() != "nan":
+                        csv_company_name = name_val
+
+                if st.button("Load Uploaded Data", type="primary"):
+                    st.session_state.financial_data = current_data
+                    st.session_state.prior_data = prior_data
+                    st.session_state.industry = upload_industry
+                    st.session_state.company_size = upload_size
+                    # Extract company name: prefer CSV field, then filename
+                    # Supports: "TICKER - Company Name.csv", "CompanyName_Ticker.csv"
+                    _file_label = uploaded.name.rsplit(".", 1)[0]
+                    if not csv_company_name:
+                        if " - " in _file_label:
+                            # "AAPL - Apple Inc" → keep as-is
+                            csv_company_name = _file_label
+                        elif "_" in _file_label:
+                            # "AppleInc_AAPL" → "AAPL - AppleInc"
+                            parts = _file_label.rsplit("_", 1)
+                            csv_company_name = f"{parts[1]} - {parts[0]}" if len(parts) == 2 else _file_label
+                        else:
+                            csv_company_name = _file_label
+                    st.session_state.company_name = csv_company_name
+                    st.session_state.load_source = "manual"
+                    st.session_state.current_year_label = current_year
+                    st.session_state.prior_year_label = prior_year
+                    st.session_state.prev_sample = "— Select —"
+                    st.rerun()
+
+                # Summary preview
+                st.markdown("### Data Preview")
+                preview_rows = []
+                all_keys = list(dict.fromkeys(list(current_data.keys()) + (list(prior_data.keys()) if prior_data else [])))
+                for k in all_keys:
+                    row_data = {"Field": k, current_year: current_data.get(k, "")}
+                    if prior_data:
+                        row_data[prior_year] = prior_data.get(k, "")
+                    preview_rows.append(row_data)
+                st.dataframe(pd.DataFrame(preview_rows), use_container_width=True, hide_index=True)
+
             except Exception as e:
                 st.error(f"Error reading file: {e}")
     
@@ -196,7 +587,7 @@ if page == "🏠 Data Input":
             st.markdown("**Other**")
             shares = st.number_input("Shares Outstanding", value=0, step=1000000, key="shares")
         
-        if st.button("💾 Save Current Year Data", type="primary"):
+        if st.button("Save Current Year Data", type="primary"):
             st.session_state.financial_data = {
                 "total_current_assets": ca, "total_current_liabilities": cl,
                 "total_assets": ta, "total_liabilities": tl, "total_equity": te,
@@ -208,31 +599,34 @@ if page == "🏠 Data Input":
                 "depreciation": dep, "operating_cash_flow": ocf,
                 "capital_expenditures": capex_val, "shares_outstanding": shares,
             }
-            st.success("✅ Current year data saved. Navigate to the Ratio Dashboard to see results.")
+            st.session_state.load_source = "manual"
+            st.session_state.company_name = "Manual Entry"
+            st.session_state.prev_sample = "— Select —"
+            st.rerun()
     
     # Validation
     if st.session_state.financial_data:
         data = st.session_state.financial_data
         st.markdown("---")
-        st.markdown("### ✅ Data Validation")
+        st.markdown("### Data Validation")
         cols = st.columns(3)
         
         with cols[0]:
             bs_check = abs((data.get("total_assets", 0) or 0) - (data.get("total_liabilities", 0) or 0) - (data.get("total_equity", 0) or 0))
             if bs_check < 1000:
-                st.success("Balance sheet balances ✓")
+                st.success("Balance sheet balances")
             elif data.get("total_assets", 0) > 0:
                 st.warning(f"Balance sheet imbalance: ${bs_check:,.0f}")
         
         with cols[1]:
             if (data.get("revenue", 0) or 0) > 0:
-                st.success("Revenue is positive ✓")
+                st.success("Revenue is positive")
             else:
                 st.warning("Revenue is zero or negative")
         
         with cols[2]:
             if data.get("total_assets", 0) and data.get("total_assets") > 0:
-                st.success("Total assets populated ✓")
+                st.success("Total assets populated")
             else:
                 st.error("Total assets required for analysis")
 
@@ -240,182 +634,805 @@ if page == "🏠 Data Input":
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE 2: RATIO DASHBOARD
 # ══════════════════════════════════════════════════════════════════════════════
-elif page == "📈 Ratio Dashboard":
-    st.title("📈 Ratio Analysis Dashboard")
-    
+elif page == "Financial Ratios":
+    st.title("Financial Ratio Analysis")
     if not st.session_state.financial_data:
-        st.warning("⚠️ No financial data loaded. Go to Data Input to enter data or load a sample company.")
+        st.warning("No financial data loaded. Go to Data Options to enter data or load a sample company.")
         st.stop()
-    
+
     data = st.session_state.financial_data
+    prior = st.session_state.prior_data
     industry = st.session_state.industry
+    company_size = st.session_state.company_size
     ratios = calculate_all_ratios(data)
+    prior_ratios = calculate_all_ratios(prior) if prior else {}
     st.session_state.ratios = ratios
-    
-    st.markdown(f"**Industry Context:** {industry}")
-    
-    # Group ratios by category
+    benchmarks = get_size_adjusted_benchmarks(industry, company_size)
+
+    # ── Compare mode selector ─────────────────────────────────────────────
+    _compare_mode = st.radio("Compare against:", ["Industry Peer", "Industry Median"],
+                             horizontal=True, key="ratio_compare_mode")
+
+    peer_ratios = None
+    peer_label = None
+    if _compare_mode != "Industry Median":
+        _peers = _get_industry_peers(industry, exclude_name=st.session_state.company_name)
+        _peer_names = ["None"] + list(_peers.keys())
+        _selected_peer = st.selectbox("Industry peer:", _peer_names, key="ratio_peer")
+        if _selected_peer != "None" and _selected_peer in _peers:
+            # Match peer's year to the year being analyzed
+            _peer_co = _peers[_selected_peer]
+            _analyzing_year = st.session_state.current_year_label
+            _peer_cy = _peer_co.get("current_year", "2023")
+            _peer_py = _peer_co.get("prior_year", "2022")
+            if _analyzing_year == _peer_py:
+                _peer_data = _peer_co["prior"]
+            else:
+                _peer_data = _peer_co["current"]
+            peer_ratios = calculate_all_ratios(_peer_data)
+            peer_label = _selected_peer.split("(")[0].strip()
+    else:
+        # Industry Mean mode: show median values as the "peer" column
+        peer_ratios = {}
+        for k, bm in benchmarks.items():
+            med = bm.get("median")
+            if med is not None:
+                peer_ratios[k] = {"value": med}
+        peer_label = "Industry Median"
+
+    # ── Overall Financial Health Summary ──────────────────────────────────
+    st.markdown("### Overall Financial Health Summary")
+
+    def _generate_health_summary(ratios, industry, company_size, co_name):
+        """Build a 3-4 sentence narrative summary from calculated ratios."""
+        _v = lambda k: ratios.get(k, {}).get("value")
+        cr = _v("current_ratio")
+        npm = _v("net_margin")
+        roe = _v("roe")
+        dte = _v("debt_to_equity")
+        ic = _v("interest_coverage")
+        at = _v("asset_turnover")
+        ocf_ni = _v("ocf_to_ni")
+        name = co_name or "The company"
+
+        parts = []
+
+        # Sentence 1: Overall positioning
+        if npm is not None and npm > 0.08 and cr is not None and cr > 1.2:
+            parts.append(f"{name} demonstrates a solid financial position within the {industry} sector ({company_size}), "
+                         f"with positive profitability (net margin: {npm:.1%}) and adequate short-term liquidity (current ratio: {cr:.2f}).")
+        elif npm is not None and npm < 0:
+            parts.append(f"{name} is operating at a loss within the {industry} sector ({company_size}), "
+                         f"with a net margin of {npm:.1%}, raising questions about the sustainability of current operations.")
+        else:
+            _npm_str = f"{npm:.1%}" if npm is not None else "N/A"
+            _cr_str = f"{cr:.2f}" if cr is not None else "N/A"
+            parts.append(f"{name} shows a mixed financial profile within the {industry} sector ({company_size}), "
+                         f"with a net margin of {_npm_str} and current ratio of {_cr_str}.")
+
+        # Sentence 2: Capital structure & solvency
+        if dte is not None and ic is not None:
+            if dte > 2.0 and ic < 3.0:
+                parts.append(f"The capital structure is heavily leveraged (D/E: {dte:.2f}) with limited debt service "
+                             f"capacity (interest coverage: {ic:.1f}x), which may constrain financial flexibility.")
+            elif dte < 1.0 and ic > 5.0:
+                parts.append(f"The balance sheet is conservatively leveraged (D/E: {dte:.2f}) with strong debt service "
+                             f"capacity (interest coverage: {ic:.1f}x), providing financial flexibility.")
+            else:
+                parts.append(f"Leverage sits at {dte:.2f}x debt-to-equity with {ic:.1f}x interest coverage, "
+                             f"indicating {'manageable' if ic > 2.0 else 'tight'} debt servicing capacity.")
+        elif dte is not None:
+            parts.append(f"The debt-to-equity ratio of {dte:.2f} {'warrants monitoring' if dte > 1.5 else 'reflects moderate leverage'}.")
+
+        # Sentence 3: Operational efficiency
+        if roe is not None and at is not None:
+            parts.append(f"Return on equity of {roe:.1%} combined with asset turnover of {at:.2f}x "
+                         f"{'suggests efficient capital deployment' if roe > 0.10 and at > 0.5 else 'indicates room for operational improvement'}.")
+
+        # Sentence 4: Earnings quality
+        if ocf_ni is not None:
+            if ocf_ni > 1.0:
+                parts.append("Cash flow generation exceeds reported earnings, supporting earnings quality.")
+            elif 0 < ocf_ni < 0.8:
+                parts.append(f"Operating cash flow covers only {ocf_ni:.0%} of net income, suggesting accrual-driven "
+                             "earnings that may warrant closer scrutiny.")
+
+        return " ".join(parts) if parts else "Insufficient data to generate a financial health summary."
+
+    _summary_text = _generate_health_summary(ratios, industry, company_size, st.session_state.company_name)
+
+    # Determine overall health color from key ratios
+    _s_npm = ratios.get("net_margin", {}).get("value")
+    _s_cr = ratios.get("current_ratio", {}).get("value")
+    _s_ic = ratios.get("interest_coverage", {}).get("value")
+    _s_score = 0
+    if _s_npm is not None:
+        _s_score += (1 if _s_npm > 0.05 else -1 if _s_npm < 0 else 0)
+    if _s_cr is not None:
+        _s_score += (1 if _s_cr > 1.2 else -1 if _s_cr < 0.8 else 0)
+    if _s_ic is not None:
+        _s_score += (1 if _s_ic > 3.0 else -1 if _s_ic < 1.5 else 0)
+    if _s_score >= 2:
+        _sum_bg, _sum_border = "#f0faf4", "#27AE60"  # green
+    elif _s_score <= -1:
+        _sum_bg, _sum_border = "#fff5f5", "#E74C3C"  # red
+    else:
+        _sum_bg, _sum_border = "#fffbf0", "#F39C12"  # amber
+
+    st.markdown(f'<div style="background-color:{_sum_bg};border-left:4px solid {_sum_border};padding:16px 20px;'
+                f'border-radius:4px;font-size:0.95em;line-height:1.6;color:#333;">{_summary_text}</div>',
+                unsafe_allow_html=True)
+
+    # ── Helper: render a single ratio row ─────────────────────────────────
+    _lower_is_better = {"debt_to_equity", "debt_to_assets", "dso", "cash_conversion_cycle",
+                        "equity_multiplier", "lt_debt_ratio", "accruals_ratio"}
+
+    def _render_ratio_row(key, ratio, ratios, prior_ratios, peer_ratios, benchmarks, industry):
+        val = ratio.get("value")
+        is_pct = ratio.get("is_percentage", False)
+        is_dollar = ratio.get("is_dollar", False)
+        display_val = format_number(val, is_dollar=is_dollar, is_percentage=is_pct)
+        health = assess_health(key, val, industry)
+
+        # Build the row using columns
+        c_name, c_val, c_peer, c_trend = st.columns([3, 2, 2, 1.2])
+
+        with c_name:
+            _status_color = {"good": "#27AE60", "warning": "#F39C12", "critical": "#E74C3C"}.get(health["status"], "#95A5A6")
+            st.markdown(f'<span style="display:inline-block;width:8px;height:8px;border-radius:50%;'
+                        f'background:{_status_color};margin-right:6px;vertical-align:middle;"></span>'
+                        f'**{ratio["name"]}**', unsafe_allow_html=True)
+
+        with c_val:
+            st.markdown(f'<span style="font-size:1.15em;font-weight:600;color:#00c805;">{display_val}</span>',
+                        unsafe_allow_html=True)
+
+        with c_peer:
+            if peer_ratios and key in peer_ratios:
+                _pv = peer_ratios[key].get("value")
+                if _pv is not None:
+                    _pfmt = format_number(_pv, is_dollar=is_dollar, is_percentage=is_pct)
+                    st.markdown(f'<span style="color:#1a1a1a;font-weight:500;">{_pfmt}</span>',
+                                unsafe_allow_html=True)
+                else:
+                    st.markdown('<span style="color:#ccc;">--</span>', unsafe_allow_html=True)
+            else:
+                st.markdown('<span style="color:#ccc;">--</span>', unsafe_allow_html=True)
+
+        with c_trend:
+            if prior_ratios and key in prior_ratios:
+                _prev = prior_ratios[key].get("value")
+                if _prev is not None and val is not None:
+                    _chg = val - _prev
+                    if key in _lower_is_better:
+                        _chg = -_chg  # flip for display: positive = improvement
+                    if abs(_chg) < 0.005 and not is_dollar:
+                        st.markdown('<span style="color:#999;">--</span>', unsafe_allow_html=True)
+                    elif _chg > 0:
+                        st.markdown('<span style="color:#27AE60;">&#9650;</span>', unsafe_allow_html=True)
+                    else:
+                        st.markdown('<span style="color:#E74C3C;">&#9660;</span>', unsafe_allow_html=True)
+                else:
+                    st.markdown('<span style="color:#ccc;">--</span>', unsafe_allow_html=True)
+            else:
+                st.markdown('<span style="color:#ccc;">--</span>', unsafe_allow_html=True)
+
+        # Contextual interpretation line
+        _interp = _build_ratio_interpretation(key, val, ratio, industry, benchmarks)
+        if _interp:
+            st.markdown(f'<div style="font-size:0.82em;color:#666;margin:-8px 0 6px 14px;line-height:1.4;">{_interp}</div>',
+                        unsafe_allow_html=True)
+
+    def _build_ratio_interpretation(key, val, ratio, industry, benchmarks):
+        """One-sentence contextual interpretation referencing industry."""
+        if val is None:
+            return None
+        bm = benchmarks.get(key, {})
+        med = bm.get("median")
+        ind_short = industry.split("/")[0].strip() if "/" in industry else industry
+
+        _interps = {
+            "current_ratio": lambda: (
+                f"At {val:.2f}x, short-term coverage is {'strong' if val > 1.5 else 'adequate' if val > 1.0 else 'thin'} "
+                f"relative to the {ind_short} median of {med:.2f}." if med else
+                f"At {val:.2f}x, the company {'can comfortably' if val > 1.5 else 'may struggle to'} meet short-term obligations."
+            ),
+            "quick_ratio": lambda: (
+                f"Excluding inventory, the company holds {val:.2f}x liquid assets per dollar of current liabilities"
+                f"{f', versus {med:.2f} for {ind_short} peers' if med else ''}."
+            ),
+            "cash_ratio": lambda: (
+                f"Cash alone covers {val:.0%} of current liabilities — {'a strong liquidity cushion' if val > 0.5 else 'limited immediate liquidity'}."
+            ),
+            "working_capital": lambda: (
+                f"{'Positive' if val > 0 else 'Negative'} working capital of {format_number(val, is_dollar=True)} "
+                f"{'provides a buffer' if val > 0 else 'signals reliance on short-term financing'} for operations."
+            ),
+            "ocf_ratio": lambda: (
+                f"Operations generate {val:.2f}x current liabilities in cash flow — "
+                f"{'comfortably self-funding' if val > 0.5 else 'tight cash generation from operations'}."
+            ),
+            "gross_margin": lambda: (
+                f"Retaining {val:.1%} of revenue after direct costs "
+                f"{'outpaces' if med and val > med else 'trails'} the {ind_short} median{f' of {med:.1%}' if med else ''}."
+            ),
+            "operating_margin": lambda: (
+                f"Core operations {'generate' if val > 0 else 'consume'} {abs(val):.1%} per revenue dollar"
+                f"{f', compared to {med:.1%} for {ind_short} peers' if med else ''}."
+            ),
+            "net_margin": lambda: (
+                f"Bottom-line profitability of {val:.1%} "
+                f"{'exceeds' if med and val > med else 'falls below'} the {ind_short} median{f' of {med:.1%}' if med else ''}."
+            ),
+            "roa": lambda: (
+                f"Each dollar of assets generates {val:.1%} in net income — "
+                f"{'efficient' if med and val > med else 'below-average'} asset utilization for {ind_short}."
+            ),
+            "roe": lambda: (
+                f"Shareholders earn {val:.1%} return on equity"
+                f"{f', versus {med:.1%} for {ind_short} peers' if med else ''}. "
+                f"{'Review DuPont decomposition to assess quality of returns.' if abs(val) > 0.15 else ''}"
+            ),
+            "roic": lambda: (
+                f"Return on invested capital of {val:.1%} {'exceeds' if val > 0.08 else 'is below'} "
+                f"typical cost of capital, {'creating' if val > 0.08 else 'potentially destroying'} shareholder value."
+            ),
+            "debt_to_equity": lambda: (
+                f"Total liabilities are {val:.2f}x equity — "
+                f"{'conservative' if val < 1.0 else 'moderate' if val < 2.0 else 'aggressive'} leverage "
+                f"for the {ind_short} sector{f' (median: {med:.2f})' if med else ''}."
+            ),
+            "debt_to_assets": lambda: (
+                f"{'More' if val > 0.5 else 'Less'} than half of assets are debt-financed ({val:.1%})"
+                f"{f', versus {med:.1%} for {ind_short} peers' if med else ''}."
+            ),
+            "interest_coverage": lambda: (
+                f"EBIT covers interest payments {val:.1f}x — "
+                f"{'comfortable' if val > 3 else 'adequate' if val > 1.5 else 'precarious; covenant risk'}"
+                f" for {ind_short}."
+            ),
+            "equity_multiplier": lambda: (
+                f"Financial leverage of {val:.2f}x amplifies both returns and risk."
+            ),
+            "lt_debt_ratio": lambda: (
+                f"Long-term debt represents {val:.1%} of total assets."
+            ),
+            "asset_turnover": lambda: (
+                f"Generating ${val:.2f} in revenue per dollar of assets"
+                f"{f', versus ${med:.2f} for {ind_short} peers' if med else ''}."
+            ),
+            "inventory_turnover": lambda: (
+                f"Inventory turns over {val:.1f}x annually — "
+                f"{'efficient' if val > 8 else 'adequate' if val > 4 else 'slow; potential obsolescence risk'}."
+            ),
+            "receivables_turnover": lambda: (
+                f"Receivables collected {val:.1f}x per year. "
+                f"{'Efficient collection cycle.' if val > 8 else 'Monitor aging of receivables.'}"
+            ),
+            "dso": lambda: (
+                f"Average {val:.0f} days to collect payment"
+                f"{f', versus {med:.0f} days for {ind_short} peers' if med else ''}. "
+                f"{'Within normal range.' if med and val <= med * 1.2 else 'Elevated; review credit policies.'}"
+            ),
+            "cash_conversion_cycle": lambda: (
+                f"Cash cycle of {val:.0f} days from payment to collection"
+                f"{f' (industry median: {med:.0f})' if med else ''}. "
+                f"{'Efficient working capital management.' if val < 50 else 'Significant capital tied up in operations.'}"
+            ),
+            "accruals_ratio": lambda: (
+                f"Accruals ratio of {val:.1%} {'is low, supporting earnings quality' if abs(val) < 0.03 else 'is elevated, suggesting earnings may not be fully cash-backed'}."
+            ),
+            "ocf_to_ni": lambda: (
+                f"Operating cash flow is {val:.2f}x net income — "
+                f"{'strong cash backing of reported earnings' if val > 1.0 else 'earnings outpace cash generation, a quality concern'}."
+            ),
+        }
+        fn = _interps.get(key)
+        if fn:
+            try:
+                return fn()
+            except Exception:
+                return None
+        return None
+
+    # ── Category insight generators ───────────────────────────────────────
+    def _category_insight(cat_name, ratios, benchmarks, industry):
+        """Generate a 2-3 sentence analytical finding for a ratio category."""
+        _v = lambda k: ratios.get(k, {}).get("value")
+        ind_short = industry.split("/")[0].strip() if "/" in industry else industry
+
+        if cat_name == "Liquidity":
+            cr, qr, cash_r, ocf_r = _v("current_ratio"), _v("quick_ratio"), _v("cash_ratio"), _v("ocf_ratio")
+            ccc = _v("cash_conversion_cycle")
+            parts = []
+            if cr is not None and qr is not None:
+                gap = cr - qr
+                if gap > 0.5:
+                    parts.append(f"The gap between current ratio ({cr:.2f}) and quick ratio ({qr:.2f}) indicates "
+                                 f"significant inventory reliance for short-term coverage.")
+                elif cr > 1.5:
+                    parts.append(f"Both current ({cr:.2f}) and quick ({qr:.2f}) ratios indicate solid liquidity.")
+                else:
+                    parts.append(f"Current ratio of {cr:.2f} suggests {'tight' if cr < 1.0 else 'modest'} liquidity.")
+            if cash_r is not None:
+                if cash_r < 0.15:
+                    parts.append(f"The cash ratio of {cash_r:.2f} indicates limited immediate liquidity; "
+                                 "the company depends on receivable collections and/or asset conversion to meet obligations.")
+                elif cash_r > 0.5:
+                    parts.append(f"Cash alone covers {cash_r:.0%} of current liabilities, providing a strong liquidity buffer.")
+            if ccc is not None and ccc > 60:
+                parts.append(f"A cash conversion cycle of {ccc:.0f} days means significant capital is tied up between "
+                             "paying suppliers and collecting from customers.")
+            return " ".join(parts[:3]) if parts else None
+
+        if cat_name == "Profitability":
+            gm, om, nm, roe_v, roa_v = _v("gross_margin"), _v("operating_margin"), _v("net_margin"), _v("roe"), _v("roa")
+            parts = []
+            if gm is not None and om is not None:
+                spread = gm - om if gm and om else None
+                if spread and spread > 0.25:
+                    parts.append(f"The {spread:.0%} spread between gross margin ({gm:.1%}) and operating margin ({om:.1%}) "
+                                 f"suggests high operating expenses are eroding profitability.")
+                elif om is not None and om > 0.15:
+                    parts.append(f"Operating margin of {om:.1%} reflects strong cost control relative to revenue.")
+            if nm is not None:
+                if nm < 0:
+                    parts.append(f"The company is unprofitable at the bottom line ({nm:.1%}), which is unsustainable long-term.")
+                elif nm > 0 and roe_v is not None:
+                    parts.append(f"Net margin of {nm:.1%} translates to a {roe_v:.1%} return on equity for shareholders.")
+            if roa_v is not None:
+                bm_roa = benchmarks.get("roa", {}).get("median")
+                if bm_roa and roa_v < bm_roa * 0.6:
+                    parts.append(f"ROA of {roa_v:.1%} falls well below the {ind_short} median, suggesting underutilized assets.")
+            return " ".join(parts[:3]) if parts else None
+
+        if cat_name == "Solvency":
+            dte, dta, ic_v, em = _v("debt_to_equity"), _v("debt_to_assets"), _v("interest_coverage"), _v("equity_multiplier")
+            parts = []
+            if dte is not None and ic_v is not None:
+                if dte > 2.0 and ic_v < 2.0:
+                    parts.append(f"High leverage (D/E: {dte:.2f}) combined with thin interest coverage ({ic_v:.1f}x) "
+                                 "creates meaningful default risk and may trigger debt covenant concerns.")
+                elif dte < 1.0 and ic_v > 5.0:
+                    parts.append(f"Conservative leverage (D/E: {dte:.2f}) and comfortable interest coverage ({ic_v:.1f}x) "
+                                 "provide significant financial flexibility and borrowing capacity.")
+                else:
+                    parts.append(f"Leverage of {dte:.2f}x D/E with {ic_v:.1f}x interest coverage is "
+                                 f"{'manageable' if ic_v > 2.5 else 'tight'} for {ind_short} standards.")
+            if dta is not None and dta > 0.7:
+                parts.append(f"With {dta:.0%} of assets debt-financed, the company has limited equity cushion "
+                             "to absorb operating losses.")
+            elif dta is not None and em is not None:
+                parts.append(f"Debt funds {dta:.0%} of total assets (equity multiplier: {em:.2f}x).")
+            return " ".join(parts[:3]) if parts else None
+
+        if cat_name == "Efficiency":
+            at_v, invt, rect, dso_v, ccc_v = _v("asset_turnover"), _v("inventory_turnover"), _v("receivables_turnover"), _v("dso"), _v("cash_conversion_cycle")
+            parts = []
+            if at_v is not None:
+                bm_at = benchmarks.get("asset_turnover", {}).get("median")
+                if bm_at and at_v < bm_at * 0.7:
+                    parts.append(f"Asset turnover of {at_v:.2f}x is below {ind_short} peers, suggesting the asset base "
+                                 "may be oversized relative to revenue or include underperforming assets.")
+                elif at_v is not None:
+                    parts.append(f"Asset turnover of {at_v:.2f}x {'compares favorably to' if bm_at and at_v >= bm_at else 'is in line with'} "
+                                 f"{ind_short} peers.")
+            if dso_v is not None and invt is not None:
+                if dso_v > 60 and invt < 5:
+                    parts.append(f"Both collection ({dso_v:.0f} days DSO) and inventory management ({invt:.1f}x turnover) "
+                                 "are sluggish, tying up working capital.")
+                elif dso_v < 40 and invt > 8:
+                    parts.append("Efficient receivables collection and inventory management minimize working capital needs.")
+            if ccc_v is not None:
+                parts.append(f"The overall cash conversion cycle of {ccc_v:.0f} days "
+                             f"{'is efficient' if ccc_v < 40 else 'ties up significant operating capital'}.")
+            return " ".join(parts[:3]) if parts else None
+
+        if cat_name == "Earnings Quality":
+            accruals, ocf_ni = _v("accruals_ratio"), _v("ocf_to_ni")
+            parts = []
+            if accruals is not None and ocf_ni is not None:
+                if accruals > 0.05:
+                    parts.append(f"The accruals ratio of {accruals:.1%} indicates earnings significantly exceed cash generation, "
+                                 "raising concerns about aggressive revenue recognition or deferred expense recognition.")
+                elif ocf_ni > 1.2:
+                    parts.append(f"Cash flow exceeds reported earnings by {(ocf_ni - 1):.0%} (OCF/NI: {ocf_ni:.2f}x), "
+                                 "suggesting conservative accounting and high earnings quality.")
+                elif ocf_ni is not None and 0 < ocf_ni < 0.8:
+                    parts.append(f"Operating cash flow covers only {ocf_ni:.0%} of net income (OCF/NI: {ocf_ni:.2f}x). "
+                                 "Investigate whether working capital changes or non-cash gains are inflating earnings.")
+                else:
+                    parts.append(f"Accruals ratio of {accruals:.1%} and OCF/NI of {ocf_ni:.2f}x suggest "
+                                 "{'solid' if abs(accruals) < 0.03 and ocf_ni > 0.9 else 'acceptable'} earnings quality.")
+            elif accruals is not None:
+                parts.append(f"Accruals ratio of {accruals:.1%} — {'within normal range' if abs(accruals) < 0.05 else 'warrants investigation'}.")
+            return " ".join(parts[:3]) if parts else None
+
+        return None
+
+    # ── Render ratio categories ───────────────────────────────────────────
     categories = {}
     for key, ratio in ratios.items():
         cat = ratio.get("category", "Other")
         if cat not in categories:
             categories[cat] = []
         categories[cat].append((key, ratio))
-    
-    # Display each category
-    for cat_name in ["Liquidity", "Profitability", "Solvency", "Efficiency", "DuPont Decomposition", "Earnings Quality"]:
+
+    # Column headers
+    def _extract_ticker(name):
+        """Extract ticker from 'ADBE - Adobe Systems' format, or return name."""
+        if name and " - " in name:
+            return name.split(" - ")[0].strip()
+        return name or "Company"
+
+    def _render_table_header(peer_label):
+        _co_ticker = _extract_ticker(st.session_state.company_name)
+        _peer_ticker = _extract_ticker(peer_label) if peer_label else "Peer"
+        h_name, h_val, h_peer, h_trend = st.columns([3, 2, 2, 1.2])
+        with h_name:
+            st.markdown('<span style="font-size:0.8em;color:#999;text-transform:uppercase;letter-spacing:0.05em;">Ratio</span>', unsafe_allow_html=True)
+        with h_val:
+            st.markdown(f'<span style="font-size:0.8em;color:#00c805;text-transform:uppercase;letter-spacing:0.05em;">{_co_ticker}</span>', unsafe_allow_html=True)
+        with h_peer:
+            st.markdown(f'<span style="font-size:0.8em;color:#999;text-transform:uppercase;letter-spacing:0.05em;">{_peer_ticker}</span>', unsafe_allow_html=True)
+        with h_trend:
+            st.markdown('<span style="font-size:0.8em;color:#999;text-transform:uppercase;letter-spacing:0.05em;">Trend</span>', unsafe_allow_html=True)
+
+    for cat_name in ["Liquidity", "Profitability", "Solvency", "Efficiency", "Earnings Quality"]:
         if cat_name not in categories:
             continue
-        
+
         st.markdown(f"### {cat_name}")
+        _render_table_header(peer_label)
+
         cat_ratios = categories[cat_name]
-        cols = st.columns(min(len(cat_ratios), 4))
-        
-        for i, (key, ratio) in enumerate(cat_ratios):
-            col = cols[i % len(cols)]
-            val = ratio.get("value")
-            health = assess_health(key, val, industry)
-            
-            with col:
-                display_val = format_number(
-                    val,
-                    is_dollar=ratio.get("is_dollar", False),
-                    is_percentage=ratio.get("is_percentage", False),
-                )
-                st.metric(
-                    label=f"{health['emoji']} {ratio['name']}",
-                    value=display_val,
-                    help=f"{ratio['formula']}\n\n{ratio['description']}\n\nStatus: {health['commentary']}",
-                )
+        for key, ratio in cat_ratios:
+            _render_ratio_row(key, ratio, ratios, prior_ratios, peer_ratios, benchmarks, industry)
+
+        # Category insight box
+        _cat_insight = _category_insight(cat_name, ratios, benchmarks, industry)
+        if _cat_insight:
+            st.markdown(f'<div style="background:#f9f9f9;border-left:3px solid #5ac8fa;padding:12px 16px;'
+                        f'margin:8px 0 16px;border-radius:3px;font-size:0.88em;color:#444;line-height:1.5;">'
+                        f'<strong>Category Insight:</strong> {_cat_insight}</div>',
+                        unsafe_allow_html=True)
         st.markdown("---")
-    
+
+    # ── Deep Analysis ─────────────────────────────────────────────────────
+    st.markdown("## Deep Analysis")
+
     # DuPont Decomposition visualization
     st.markdown("### DuPont Decomposition: What Drives ROE?")
     roe_val = ratios.get("roe", {}).get("value")
     margin_val = ratios.get("dupont_margin", {}).get("value")
     turnover_val = ratios.get("dupont_turnover", {}).get("value")
     leverage_val = ratios.get("dupont_leverage", {}).get("value")
-    
+
     if all(v is not None for v in [roe_val, margin_val, turnover_val, leverage_val]):
-        fig = go.Figure(go.Bar(
-            x=["Net Profit Margin", "Asset Turnover", "Equity Multiplier", "= ROE"],
-            y=[margin_val, turnover_val, leverage_val, roe_val],
-            marker_color=["#3498DB", "#2ECC71", "#E74C3C", "#1B4F72"],
+        _dp_labels = ["Net Profit Margin", "Asset Turnover", "Equity Multiplier", "= ROE"]
+        _dp_vals = [margin_val, turnover_val, leverage_val, roe_val]
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            name=st.session_state.company_name or "Company",
+            x=_dp_labels,
+            y=_dp_vals,
+            marker_color=["#5ac8fa", "#00c805", "#e74c3c", "#1a1a1a"],
             text=[f"{margin_val:.1%}", f"{turnover_val:.2f}x", f"{leverage_val:.2f}x", f"{roe_val:.1%}"],
             textposition="outside",
+            cliponaxis=False,
         ))
+        if peer_ratios:
+            _p_roe = peer_ratios.get("roe", {}).get("value")
+            _p_margin = peer_ratios.get("dupont_margin", {}).get("value")
+            _p_turn = peer_ratios.get("dupont_turnover", {}).get("value")
+            _p_lev = peer_ratios.get("dupont_leverage", {}).get("value")
+            if all(v is not None for v in [_p_roe, _p_margin, _p_turn, _p_lev]):
+                _peer_dp = [_p_margin, _p_turn, _p_lev, _p_roe]
+                fig.add_trace(go.Bar(
+                    name=peer_label or "Peer",
+                    x=_dp_labels,
+                    y=_peer_dp,
+                    marker_color="#999999",
+                    text=[f"{_p_margin:.1%}", f"{_p_turn:.2f}x", f"{_p_lev:.2f}x", f"{_p_roe:.1%}"],
+                    textposition="outside",
+                    cliponaxis=False,
+                ))
+                _dp_vals = _dp_vals + _peer_dp
+        _dp_max = max(abs(v) for v in _dp_vals)
+        _dp_min = min(v for v in _dp_vals)
         fig.update_layout(
             title="DuPont Three-Factor Decomposition",
             yaxis_title="Value",
-            height=350,
-            showlegend=False,
+            height=400,
+            barmode="group",
+            bargap=0.3,
+            margin=dict(t=50, b=40),
+            yaxis=dict(range=[min(0, _dp_min * 1.3) - 0.05, _dp_max * 1.25 + 0.05]),
         )
         st.plotly_chart(fig, use_container_width=True)
-        
-        # Interpret the primary driver
+
         components = {"Profit Margin": abs(margin_val), "Asset Turnover": abs(turnover_val) / 3, "Leverage": abs(leverage_val) / 5}
         primary = max(components, key=components.get)
         if primary == "Leverage" and leverage_val > 2.5:
-            st.warning(f"⚠️ **ROE is primarily driven by financial leverage** (equity multiplier: {leverage_val:.2f}x). "
+            st.warning(f"**ROE is primarily driven by financial leverage** (equity multiplier: {leverage_val:.2f}x). "
                        "High-leverage ROE amplifies both returns and risk. A decline in earnings could quickly erode equity.")
         elif primary == "Profit Margin":
-            st.success(f"✅ **ROE is driven by profitability** (net margin: {margin_val:.1%}). "
+            st.success(f"**ROE is driven by profitability** (net margin: {margin_val:.1%}). "
                        "This represents sustainable, high-quality returns.")
-    
+
     # Cross-ratio insights
     insights = get_cross_ratio_insights(ratios, industry)
     if insights:
-        st.markdown("### 🔍 Cross-Ratio Professional Insights")
+        st.markdown("### Cross-Ratio Professional Insights")
         for insight in insights:
             css_class = {"critical": "risk-critical", "warning": "risk-warning", "positive": "risk-good"}.get(insight["type"], "insight-box")
             st.markdown(f'<div class="{css_class}"><strong>{insight["title"]}</strong><br>{insight["detail"]}</div>',
                        unsafe_allow_html=True)
 
+    # ── Professional Implications ─────────────────────────────────────────
+    st.markdown("### Professional Implications")
+    st.markdown("Audit and advisory considerations triggered by the ratio analysis:")
+
+    _implications = []
+    _v = lambda k: ratios.get(k, {}).get("value")
+
+    # Going concern
+    _cr = _v("current_ratio")
+    _ic = _v("interest_coverage")
+    _nm = _v("net_margin")
+    _ocf = data.get("operating_cash_flow")
+    if (_cr is not None and _cr < 1.0) or (_ic is not None and _ic < 1.5) or (_nm is not None and _nm < -0.10):
+        _triggers = []
+        if _cr is not None and _cr < 1.0:
+            _triggers.append(f"current ratio below 1.0 ({_cr:.2f})")
+        if _ic is not None and _ic < 1.5:
+            _triggers.append(f"interest coverage below 1.5x ({_ic:.1f}x)")
+        if _nm is not None and _nm < -0.10:
+            _triggers.append(f"significant operating losses ({_nm:.1%})")
+        _implications.append({
+            "title": "Going Concern Assessment (AU-C 570)",
+            "detail": f"Indicators present: {'; '.join(_triggers)}. The auditor should evaluate management's plans "
+                      "for mitigating these conditions and assess the adequacy of going concern disclosures. "
+                      "Consider the entity's ability to meet obligations for at least 12 months beyond the financial statement date.",
+        })
+
+    # Revenue recognition
+    _dso = _v("dso")
+    _accruals = _v("accruals_ratio")
+    if (_dso is not None and _dso > 70) or (_accruals is not None and _accruals > 0.05):
+        _detail = "Elevated "
+        _parts = []
+        if _dso is not None and _dso > 70:
+            _parts.append(f"DSO ({_dso:.0f} days)")
+        if _accruals is not None and _accruals > 0.05:
+            _parts.append(f"accruals ratio ({_accruals:.1%})")
+        _detail += " and ".join(_parts)
+        _detail += " suggest possible aggressive revenue recognition. Evaluate compliance with ASC 606 performance obligation "
+        _detail += "criteria, particularly timing of revenue recognition and the existence of side agreements or bill-and-hold arrangements."
+        _implications.append({
+            "title": "Revenue Recognition Risk (ASC 606)",
+            "detail": _detail,
+        })
+
+    # Inventory valuation
+    _invt = _v("inventory_turnover")
+    _gm = _v("gross_margin")
+    if _invt is not None and _invt < 4:
+        _implications.append({
+            "title": "Inventory Valuation (ASC 330)",
+            "detail": f"Inventory turnover of {_invt:.1f}x is low, indicating slow-moving inventory. "
+                      "Evaluate whether inventory is carried at the lower of cost or net realizable value (NRV) per ASC 330-10. "
+                      "Request aging analysis and assess the adequacy of obsolescence reserves.",
+        })
+
+    # Debt covenants and classification
+    _dte = _v("debt_to_equity")
+    if (_dte is not None and _dte > 2.5) or (_ic is not None and _ic < 2.0):
+        _implications.append({
+            "title": "Debt Classification and Covenants (ASC 470)",
+            "detail": f"{'High leverage (D/E: ' + f'{_dte:.2f})' if _dte and _dte > 2.5 else ''}"
+                      f"{' and ' if _dte and _dte > 2.5 and _ic and _ic < 2.0 else ''}"
+                      f"{'thin interest coverage (' + f'{_ic:.1f}x)' if _ic and _ic < 2.0 else ''} "
+                      "increase the risk of covenant violations. Review debt agreements for financial covenant thresholds, "
+                      "assess proper classification of debt as current vs. non-current per ASC 470-10, "
+                      "and evaluate whether any subjective acceleration clauses have been triggered.",
+        })
+
+    # Impairment indicators
+    _roa = _v("roa")
+    _at = _v("asset_turnover")
+    if (_roa is not None and _roa < 0) or (_at is not None and _at < 0.2):
+        _implications.append({
+            "title": "Asset Impairment Testing (ASC 350 / ASC 360)",
+            "detail": "Low or negative returns on assets may indicate impairment triggers for goodwill (ASC 350) "
+                      "and long-lived assets (ASC 360). Evaluate whether the carrying amount of asset groups exceeds "
+                      "their fair value and whether goodwill impairment testing has been performed with reasonable assumptions.",
+        })
+
+    # Earnings quality / fraud risk
+    _ocf_ni = _v("ocf_to_ni")
+    if _accruals is not None and _accruals > 0.08:
+        _implications.append({
+            "title": "Earnings Manipulation Risk (SAS 99 / AU-C 240)",
+            "detail": f"The accruals ratio of {_accruals:.1%} significantly exceeds cash generation, "
+                      "which is a recognized fraud risk factor under AU-C 240. Consider expanding substantive testing "
+                      "of revenue and expense cut-off, evaluating management estimates for bias, "
+                      "and cross-referencing with the Beneish M-Score analysis on the Risk Assessment page.",
+        })
+
+    # Fair value measurements
+    _intang = data.get("intangibles", 0) or 0
+    _ta = data.get("total_assets", 1) or 1
+    if _intang / _ta > 0.3:
+        _implications.append({
+            "title": "Fair Value Measurements (ASC 820)",
+            "detail": f"Intangible assets represent {_intang / _ta:.0%} of total assets, likely requiring significant "
+                      "Level 3 fair value measurements under ASC 820. Evaluate the reasonableness of valuation models, "
+                      "discount rates, and growth assumptions used in measuring these assets.",
+        })
+
+    # Positive — no major concerns
+    if not _implications:
+        _implications.append({
+            "title": "No Significant Red Flags Identified",
+            "detail": "The ratio analysis does not trigger major audit risk indicators. Standard substantive procedures "
+                      "and analytical review should be sufficient. Continue to evaluate industry-specific risks "
+                      "and management representations as part of the overall audit strategy.",
+        })
+
+    for impl in _implications:
+        st.markdown(f'<div style="background:#f9f9f9;border-left:3px solid #1a1a1a;padding:12px 16px;'
+                    f'margin:8px 0;border-radius:3px;font-size:0.9em;line-height:1.5;">'
+                    f'<strong>{impl["title"]}</strong><br><span style="color:#555;">{impl["detail"]}</span></div>',
+                    unsafe_allow_html=True)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE 3: BENCHMARKING
 # ══════════════════════════════════════════════════════════════════════════════
-elif page == "🎯 Benchmarking":
-    st.title("🎯 Industry Benchmarking")
-    
+elif page == "Benchmarking":
+    st.title("Benchmarking")
     if not st.session_state.financial_data:
-        st.warning("⚠️ No financial data loaded. Go to Data Input first.")
+        st.warning("No financial data loaded. Go to Data Input first.")
         st.stop()
-    
+
     data = st.session_state.financial_data
     industry = st.session_state.industry
+    company_size = st.session_state.company_size
     ratios = calculate_all_ratios(data)
-    benchmarks = INDUSTRY_BENCHMARKS.get(industry, {})
-    
+    benchmarks = get_size_adjusted_benchmarks(industry, company_size)
+
     if not benchmarks:
         st.error(f"No benchmark data available for {industry}.")
         st.stop()
-    
-    st.markdown(f"**Comparing against:** {industry} industry medians")
-    
-    # Radar Chart
-    st.markdown("### Radar Chart: Company vs. Industry Median")
+
+    # ── Peer comparison selector ──────────────────────────────────────────
+    _bm_peers = _get_industry_peers(industry, exclude_name=st.session_state.company_name)
+    _bm_peer_names = ["None"] + list(_bm_peers.keys())
+    _bm_selected = st.selectbox("Compare with industry peer:", _bm_peer_names, key="bench_peer")
+    bm_peer_ratios = None
+    bm_peer_label = None
+    if _bm_selected != "None" and _bm_selected in _bm_peers:
+        # Match peer's year to the year being analyzed
+        _bm_peer_co = _bm_peers[_bm_selected]
+        _analyzing_year = st.session_state.current_year_label
+        _bm_peer_cy = _bm_peer_co.get("current_year", "2023")
+        _bm_peer_py = _bm_peer_co.get("prior_year", "2022")
+        if _analyzing_year == _bm_peer_py:
+            _bm_peer_data = _bm_peer_co["prior"]
+        else:
+            _bm_peer_data = _bm_peer_co["current"]
+        bm_peer_ratios = calculate_all_ratios(_bm_peer_data)
+        bm_peer_label = _bm_selected.split("(")[0].strip()
+
+    # ── Radar Chart ───────────────────────────────────────────────────────
+    _radar_title = "Radar Chart: Company vs. Size-Adjusted Industry Median"
+    if bm_peer_label:
+        _radar_title = f"Radar Chart: Company vs. {bm_peer_label} vs. Median"
+    st.markdown(f"### {_radar_title}")
     radar_keys = ["current_ratio", "gross_margin", "operating_margin", "roa", "roe",
                   "debt_to_equity", "interest_coverage", "asset_turnover"]
-    radar_labels = [ratios[k]["name"] for k in radar_keys if k in ratios]
-    
+
     company_vals = []
     median_vals = []
+    peer_vals = []
     valid_labels = []
     for k in radar_keys:
         v = ratios.get(k, {}).get("value")
         bm = benchmarks.get(k, {}).get("median")
         if v is not None and bm is not None and bm != 0:
-            # Normalize: company value as % of median
             company_vals.append(v / bm * 100)
             median_vals.append(100)
             valid_labels.append(ratios[k]["name"])
-    
+            if bm_peer_ratios:
+                pv = bm_peer_ratios.get(k, {}).get("value")
+                peer_vals.append(pv / bm * 100 if pv is not None else 100)
+
     if valid_labels:
         fig = go.Figure()
         fig.add_trace(go.Scatterpolar(
             r=company_vals + [company_vals[0]],
             theta=valid_labels + [valid_labels[0]],
-            fill="toself", name="Company",
-            fillcolor="rgba(27, 79, 114, 0.2)",
-            line=dict(color="#1B4F72"),
+            fill="toself", name=st.session_state.company_name or "Company",
+            fillcolor="rgba(0, 200, 5, 0.15)",
+            line=dict(color="#00c805"),
         ))
+        if bm_peer_ratios and peer_vals:
+            fig.add_trace(go.Scatterpolar(
+                r=peer_vals + [peer_vals[0]],
+                theta=valid_labels + [valid_labels[0]],
+                fill="toself", name=bm_peer_label or "Peer",
+                fillcolor="rgba(90, 200, 250, 0.10)",
+                line=dict(color="#5ac8fa"),
+            ))
         fig.add_trace(go.Scatterpolar(
             r=median_vals + [median_vals[0]],
             theta=valid_labels + [valid_labels[0]],
-            fill="toself", name="Industry Median",
-            fillcolor="rgba(46, 204, 113, 0.1)",
-            line=dict(color="#27AE60", dash="dash"),
+            fill="toself", name="Size-Adjusted Median",
+            fillcolor="rgba(26, 26, 26, 0.05)",
+            line=dict(color="#999999", dash="dash"),
         ))
+        _all_radar = company_vals + peer_vals + [150]
         fig.update_layout(
-            polar=dict(radialaxis=dict(visible=True, range=[0, max(company_vals + [150])])),
-            title="Company Ratios as % of Industry Median (100% = Median)",
+            polar=dict(radialaxis=dict(visible=True, range=[0, max(_all_radar)])),
+            title="Ratios as % of Size-Adjusted Median (100% = Median)",
             height=500,
         )
         st.plotly_chart(fig, use_container_width=True)
-    
-    # Percentile Rankings
+
+    # ── Percentile Rankings ───────────────────────────────────────────────
     st.markdown("### Percentile Rankings")
     ranking_data = []
     for key in radar_keys + ["dso", "cash_conversion_cycle", "net_margin", "roic"]:
         val = ratios.get(key, {}).get("value")
         bm = benchmarks.get(key, {})
         if val is not None and bm:
-            pctl = get_percentile(val, bm)
+            _raw_pctl = get_percentile(val, bm, ratio_key=key)
+            pctl = _raw_pctl.split("(")[1].rstrip(")") if "(" in _raw_pctl else _raw_pctl
             is_pct = ratios.get(key, {}).get("is_percentage", False)
-            ranking_data.append({
+            row = {
                 "Ratio": ratios[key]["name"],
                 "Company Value": format_number(val, is_percentage=is_pct),
                 "Industry Median": format_number(bm.get("median"), is_percentage=is_pct) if bm.get("median") else "N/A",
                 "Percentile": pctl,
-            })
-    
+            }
+            if bm_peer_ratios:
+                _pv = bm_peer_ratios.get(key, {}).get("value")
+                _raw_pp = get_percentile(_pv, bm, ratio_key=key) if _pv is not None else "N/A"
+                _pp = _raw_pp.split("(")[1].rstrip(")") if "(" in _raw_pp else _raw_pp
+                row["Peer Value"] = format_number(_pv, is_percentage=is_pct) if _pv is not None else "N/A"
+                row["Peer Percentile"] = _pp
+            ranking_data.append(row)
+
     if ranking_data:
-        df = pd.DataFrame(ranking_data)
-        st.dataframe(df, use_container_width=True, hide_index=True)
-    
-    # Strengths and Weaknesses
-    st.markdown("### 💪 Strengths & Weaknesses vs. Peers")
+        # Build styled HTML table
+        _hdr_style = 'style="padding:10px 14px;font-size:1.05rem;font-weight:700;border-bottom:2px solid #e8e8e8;text-align:left;font-family:Aptos,Calibri,sans-serif;"'
+        _co_hdr = 'style="padding:10px 14px;font-size:1.05rem;font-weight:700;border-bottom:2px solid #e8e8e8;text-align:left;color:#00c805;font-family:Aptos,Calibri,sans-serif;"'
+        _co_cell = 'style="padding:8px 14px;font-size:1.05rem;border-bottom:1px solid #f0f0f0;color:#00c805;font-weight:500;font-family:Aptos,Calibri,sans-serif;"'
+        _cell_style = 'style="padding:8px 14px;font-size:1.05rem;border-bottom:1px solid #f0f0f0;font-family:Aptos,Calibri,sans-serif;"'
+        _peer_hdr = 'style="padding:10px 14px;font-size:1.05rem;font-weight:700;border-bottom:2px solid #e8e8e8;text-align:left;color:#5ac8fa;font-family:Aptos,Calibri,sans-serif;"'
+        _peer_cell = 'style="padding:8px 14px;font-size:1.05rem;border-bottom:1px solid #f0f0f0;color:#5ac8fa;font-weight:500;font-family:Aptos,Calibri,sans-serif;"'
+
+        _has_peer = "Peer Value" in ranking_data[0]
+        _co_name = st.session_state.company_name or "Company"
+        _co_ticker = _co_name.split(" - ")[0].strip() if " - " in _co_name else _co_name
+        _peer_ticker = bm_peer_label.split(" - ")[0].strip() if bm_peer_label and " - " in bm_peer_label else (bm_peer_label or "Peer")
+        _html = '<table style="width:100%;border-collapse:collapse;margin:8px 0;">'
+        _html += f'<tr><th {_hdr_style}>Ratio</th><th {_hdr_style}>Industry Median</th><th {_co_hdr}>{_co_ticker}</th><th {_co_hdr}>Percentile</th>'
+        if _has_peer:
+            _html += f'<th {_peer_hdr}>{_peer_ticker}</th><th {_peer_hdr}>Percentile</th>'
+        _html += '</tr>'
+        for _i, r in enumerate(ranking_data):
+            _row_bg = "#f8f8f8" if _i % 2 == 0 else "#ffffff"
+            _html += f'<tr style="background:{_row_bg};"><td {_cell_style}>{r["Ratio"]}</td><td {_cell_style}>{r["Industry Median"]}</td><td {_co_cell}>{r["Company Value"]}</td><td {_co_cell}>{r["Percentile"]}</td>'
+            if _has_peer:
+                _html += f'<td {_peer_cell}>{r.get("Peer Value", "N/A")}</td><td {_peer_cell}>{r.get("Peer Percentile", "N/A")}</td>'
+            _html += '</tr>'
+        _html += '</table>'
+        st.markdown(_html, unsafe_allow_html=True)
+
+    # ── Strengths and Weaknesses vs. Industry ─────────────────────────────
+    st.markdown("### Strengths & Weaknesses vs. Industry Median")
     above = []
     below = []
     for key in benchmarks:
@@ -423,41 +1440,105 @@ elif page == "🎯 Benchmarking":
         med = benchmarks[key].get("median")
         if val is not None and med is not None and med != 0:
             pct_diff = (val - med) / abs(med)
-            # For ratios where lower is better (D/E, DSO, CCC), flip the sign
             if key in ["debt_to_equity", "debt_to_assets", "dso", "cash_conversion_cycle"]:
                 pct_diff = -pct_diff
             if pct_diff > 0.1:
                 above.append((ratios[key]["name"], pct_diff))
             elif pct_diff < -0.1:
                 below.append((ratios[key]["name"], pct_diff))
-    
+
     above.sort(key=lambda x: x[1], reverse=True)
     below.sort(key=lambda x: x[1])
-    
+
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown("**🟢 Strengths (Above Median)**")
+        st.markdown("**Strengths (Above Median)**")
         for name, diff in above[:5]:
             st.markdown(f"- **{name}**: {diff:+.0%} vs. median")
         if not above:
             st.markdown("_No ratios significantly above industry median._")
-    
+
     with col2:
-        st.markdown("**🔴 Weaknesses (Below Median)**")
+        st.markdown("**Weaknesses (Below Median)**")
         for name, diff in below[:5]:
             st.markdown(f"- **{name}**: {diff:+.0%} vs. median")
         if not below:
             st.markdown("_No ratios significantly below industry median._")
 
+    # ── Head-to-Head: Company vs. Peer ────────────────────────────────────
+    if bm_peer_ratios and bm_peer_label:
+        st.markdown(f"### Head-to-Head: {st.session_state.company_name or 'Company'} vs. {bm_peer_label}")
+        _h2h_keys = ["current_ratio", "gross_margin", "operating_margin", "net_margin",
+                     "roa", "roe", "debt_to_equity", "interest_coverage", "asset_turnover"]
+        _h2h_labels = []
+        _h2h_co = []
+        _h2h_peer = []
+        for k in _h2h_keys:
+            cv = ratios.get(k, {}).get("value")
+            pv = bm_peer_ratios.get(k, {}).get("value")
+            if cv is not None and pv is not None:
+                _h2h_labels.append(ratios[k]["name"])
+                _h2h_co.append(cv)
+                _h2h_peer.append(pv)
+
+        if _h2h_labels:
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                name=st.session_state.company_name or "Company",
+                y=_h2h_labels, x=_h2h_co,
+                orientation="h", marker_color="#00c805",
+            ))
+            fig.add_trace(go.Bar(
+                name=bm_peer_label,
+                y=_h2h_labels, x=_h2h_peer,
+                orientation="h", marker_color="#5ac8fa",
+            ))
+            fig.update_layout(
+                barmode="group", height=max(350, len(_h2h_labels) * 45),
+                margin=dict(l=20, r=20, t=40, b=30),
+                xaxis_title="Value",
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Summary: wins vs losses
+            _co_name = st.session_state.company_name or "Company"
+            _wins = 0
+            _losses = 0
+            _lower_better = {"debt_to_equity", "dso", "cash_conversion_cycle"}
+            for k, cv, pv in zip([k for k in _h2h_keys if ratios.get(k, {}).get("value") is not None and bm_peer_ratios.get(k, {}).get("value") is not None], _h2h_co, _h2h_peer):
+                if k in _lower_better:
+                    if cv < pv:
+                        _wins += 1
+                    elif cv > pv:
+                        _losses += 1
+                else:
+                    if cv > pv:
+                        _wins += 1
+                    elif cv < pv:
+                        _losses += 1
+            st.markdown(f"**{_co_name}** outperforms on **{_wins}** of {_wins + _losses} metrics, "
+                        f"underperforms on **{_losses}**.")
+
+    # ── Source Attribution ────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown(
+        '<div style="font-size:0.82rem;color:#888;line-height:1.6;font-family:Aptos,Calibri,sans-serif;">'
+        '<b>Industry Median Sources:</b> Benchmark data derived from aggregated public filings (10-K) '
+        'and industry composite statistics sourced from S&P Capital IQ, Damodaran Online '
+        '(pages.stern.nyu.edu/~adamodar), and U.S. Census Bureau Annual Business Survey. '
+        'Percentile bands (P25 / Median / P75) reflect trailing-twelve-month data for U.S.-listed companies '
+        'within each industry classification. Size adjustments applied per revenue-tier segmentation. '
+        'Data is approximate and intended for educational analysis only.</div>',
+        unsafe_allow_html=True)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE 4: DCF VALUATION
 # ══════════════════════════════════════════════════════════════════════════════
-elif page == "💰 DCF Valuation":
-    st.title("💰 DCF Valuation Engine")
-    
+elif page == "DCF Valuation":
+    st.title("DCF Valuation Engine")
     if not st.session_state.financial_data:
-        st.warning("⚠️ No financial data loaded. Go to Data Input first.")
+        st.warning("No financial data loaded. Go to Data Input first.")
         st.stop()
     
     data = st.session_state.financial_data
@@ -533,9 +1614,9 @@ elif page == "💰 DCF Valuation":
     warnings = validate_assumptions(assumptions)
     for w in warnings:
         if w["severity"] == "critical":
-            st.error(f"⚠️ **{w['field']}:** {w['message']}")
+            st.error(f"**{w['field']}:** {w['message']}")
         else:
-            st.warning(f"⚡ **{w['field']}:** {w['message']}")
+            st.warning(f"**{w['field']}:** {w['message']}")
     
     st.markdown("---")
     
@@ -553,7 +1634,7 @@ elif page == "💰 DCF Valuation":
                  help="High TV% means valuation depends heavily on long-term assumptions. Above 70% warrants caution.")
     
     if dcf_result["tv_pct_of_ev"] > 0.75:
-        st.warning("⚠️ Terminal value accounts for over 75% of enterprise value. "
+        st.warning("Terminal value accounts for over 75% of enterprise value. "
                    "The valuation is highly sensitive to terminal growth and WACC assumptions. "
                    "Review the sensitivity analysis below carefully.")
     
@@ -566,18 +1647,29 @@ elif page == "💰 DCF Valuation":
         x=[d["label"] for d in decomp] + ["Enterprise Value"],
         y=[d["value"] for d in decomp] + [dcf_result["enterprise_value"]],
         connector={"line": {"color": "rgb(63, 63, 63)"}},
-        increasing={"marker": {"color": "#27AE60"}},
-        totals={"marker": {"color": "#1B4F72"}},
+        increasing={"marker": {"color": "#00c805"}},
+        totals={"marker": {"color": "#1a1a1a"}},
     ))
     # Fix: waterfall needs proper measures
+    _ev_vals = [d["value"] for d in decomp]
     fig = go.Figure(go.Bar(
         x=[d["label"] for d in decomp],
-        y=[d["value"] for d in decomp],
-        marker_color=["#3498DB"] * (len(decomp) - 1) + ["#E74C3C"],
+        y=_ev_vals,
+        marker_color=["#00c805"] * (len(decomp) - 1) + ["#1a1a1a"],
         text=[f"${d['value']/1e6:,.0f}M ({d['pct_of_ev']:.0%})" for d in decomp],
         textposition="outside",
+        cliponaxis=False,
     ))
-    fig.update_layout(title="Enterprise Value Composition", yaxis_title="Present Value ($)", height=400)
+    _ev_max = max(abs(v) for v in _ev_vals) if _ev_vals else 1
+    _ev_min = min(v for v in _ev_vals) if _ev_vals else 0
+    fig.update_layout(
+        title="Enterprise Value Composition",
+        yaxis_title="Present Value ($)",
+        height=400,
+        bargap=0.3,
+        margin=dict(t=50, b=40),
+        yaxis=dict(range=[min(0, _ev_min * 1.15), _ev_max * 1.25]),
+    )
     st.plotly_chart(fig, use_container_width=True)
     
     # Sensitivity Analysis
@@ -590,13 +1682,21 @@ elif page == "💰 DCF Valuation":
     for row in sens["ev_matrix"]:
         z_data.append([v / 1e6 if v else None for v in row])
     
+    _pastel_scale = [
+        [0.0, "#f4c2c2"],   # soft rose
+        [0.25, "#fce4b8"],  # soft peach
+        [0.5, "#fef9e7"],   # soft cream
+        [0.75, "#d5f0de"],  # soft mint
+        [1.0, "#b8e6c8"],   # soft sage
+    ]
     fig = go.Figure(data=go.Heatmap(
         z=z_data,
         x=[f"{t:.1%}" for t in sens["tgr_values"]],
         y=[f"{w:.1%}" for w in sens["wacc_values"]],
-        colorscale="RdYlGn",
+        colorscale=_pastel_scale,
         text=[[f"${v:,.0f}M" if v else "N/A" for v in row] for row in z_data],
         texttemplate="%{text}",
+        textfont={"size": 11, "color": "#333"},
         hovertemplate="WACC: %{y}<br>TGR: %{x}<br>EV: %{text}<extra></extra>",
     ))
     fig.update_layout(
@@ -631,21 +1731,20 @@ elif page == "💰 DCF Valuation":
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE 5: RISK ASSESSMENT
 # ══════════════════════════════════════════════════════════════════════════════
-elif page == "⚠️ Risk Assessment":
-    st.title("⚠️ Risk Assessment & Professional Judgment")
-    
+elif page == "Risk Assessment":
+    st.title("Risk Assessment & Professional Judgment")
     if not st.session_state.financial_data:
-        st.warning("⚠️ No financial data loaded. Go to Data Input first.")
+        st.warning("No financial data loaded. Go to Data Input first.")
         st.stop()
-    
+
     data = st.session_state.financial_data
     prior = st.session_state.prior_data
-    
+
     if not prior:
-        st.warning("⚠️ Prior year data is required for M-Score and F-Score. Load a sample company to see full risk analysis.")
-    
+        st.warning("Prior year data is required for M-Score and F-Score. Load a sample company to see full risk analysis.")
+
     # ── Altman Z-Score ──
-    st.markdown("### 📊 Altman Z-Score — Bankruptcy Prediction")
+    st.markdown("### Altman Z-Score — Bankruptcy Prediction")
     z_result = calculate_altman_z_score(data)
     
     if "error" not in z_result:
@@ -656,18 +1755,29 @@ elif page == "⚠️ Risk Assessment":
                        unsafe_allow_html=True)
             st.markdown(z_result["zone_description"])
             if z_result.get("standard_reference"):
-                st.info(f"📖 **Standard:** {z_result['standard_reference']}")
+                st.info(f"**Standard:** {z_result['standard_reference']}")
         
         with zcol2:
             comp_df = pd.DataFrame(z_result["components"])
+            _z_vals = [c["weighted"] for c in z_result["components"]]
             fig = go.Figure(go.Bar(
                 x=[c["variable"] for c in z_result["components"]],
-                y=[c["weighted"] for c in z_result["components"]],
-                marker_color=["#27AE60" if c["weighted"] > 0 else "#E74C3C" for c in z_result["components"]],
+                y=_z_vals,
+                marker_color=["#00c805" if c["weighted"] > 0 else "#e74c3c" for c in z_result["components"]],
                 text=[f"{c['weighted']:.3f}" for c in z_result["components"]],
                 textposition="outside",
+                cliponaxis=False,
             ))
-            fig.update_layout(title="Z-Score Component Contributions", yaxis_title="Weighted Value", height=350)
+            _z_max = max(abs(v) for v in _z_vals) if _z_vals else 1
+            _z_min = min(v for v in _z_vals) if _z_vals else 0
+            fig.update_layout(
+                title="Z-Score Component Contributions",
+                yaxis_title="Weighted Value",
+                height=350,
+                bargap=0.3,
+                margin=dict(t=50, b=40),
+                yaxis=dict(range=[min(0, _z_min * 1.3) - 0.05, _z_max * 1.25 + 0.05]),
+            )
             st.plotly_chart(fig, use_container_width=True)
         
         # Component detail
@@ -680,7 +1790,7 @@ elif page == "⚠️ Risk Assessment":
     # ── Beneish M-Score ──
     if prior:
         st.markdown("---")
-        st.markdown("### 🔍 Beneish M-Score — Earnings Manipulation Detection")
+        st.markdown("### Beneish M-Score — Earnings Manipulation Detection")
         m_result = calculate_beneish_m_score(data, prior)
         
         mcol1, mcol2 = st.columns([1, 2])
@@ -691,25 +1801,35 @@ elif page == "⚠️ Risk Assessment":
             st.markdown(f"**Threshold:** -1.78 | **Variables Flagged:** {m_result['n_flags']}/8")
             st.markdown(m_result["class_description"])
             if m_result.get("standard_reference"):
-                st.info(f"📖 **Standard:** {m_result['standard_reference']}")
+                st.info(f"**Standard:** {m_result['standard_reference']}")
         
         with mcol2:
             var_names = [v["name"].split("(")[1].rstrip(")") if "(" in v["name"] else v["name"][:10] for v in m_result["variables"]]
             var_vals = [v["value"] or 0 for v in m_result["variables"]]
-            var_colors = ["#E74C3C" if v["flag"] else "#3498DB" for v in m_result["variables"]]
+            var_colors = ["#e74c3c" if v["flag"] else "#5ac8fa" for v in m_result["variables"]]
             
             fig = go.Figure(go.Bar(
                 x=var_names, y=var_vals,
                 marker_color=var_colors,
                 text=[f"{v:.3f}" if v else "N/A" for v in var_vals],
                 textposition="outside",
+                cliponaxis=False,
             ))
-            fig.update_layout(title="M-Score Variables (Red = Flagged)", yaxis_title="Index Value", height=350)
+            _m_max = max(abs(v) for v in var_vals) if var_vals else 1
+            _m_min = min(v for v in var_vals) if var_vals else 0
+            fig.update_layout(
+                title="M-Score Variables (Red = Flagged)",
+                yaxis_title="Index Value",
+                height=350,
+                bargap=0.3,
+                margin=dict(t=50, b=40),
+                yaxis=dict(range=[min(0, _m_min * 1.3) - 0.05, _m_max * 1.25 + 0.05]),
+            )
             st.plotly_chart(fig, use_container_width=True)
         
         # Flagged variable details
         if m_result["flagged_variables"]:
-            st.markdown("#### 🚩 Flagged Variables — Recommended Investigation Areas")
+            st.markdown("#### Flagged Variables — Recommended Investigation Areas")
             for v in m_result["flagged_variables"]:
                 st.markdown(f'<div class="risk-critical"><strong>{v["name"]}</strong> = {v["value"]:.3f}<br>{v["interpretation"]}</div>',
                            unsafe_allow_html=True)
@@ -717,7 +1837,7 @@ elif page == "⚠️ Risk Assessment":
     # ── Piotroski F-Score ──
     if prior:
         st.markdown("---")
-        st.markdown("### 📋 Piotroski F-Score — Financial Strength")
+        st.markdown("### Piotroski F-Score — Financial Strength")
         f_result = calculate_piotroski_f_score(data, prior)
         
         fcol1, fcol2 = st.columns([1, 2])
@@ -738,7 +1858,7 @@ elif page == "⚠️ Risk Assessment":
                 criteria_data.append({
                     "Criteria": c["id"],
                     "Name": c["name"],
-                    "Result": "✅ Pass" if c["score"] == 1 else "❌ Fail",
+                    "Result": "Pass" if c["score"] == 1 else "Fail",
                     "Detail": c["detail"],
                 })
             st.dataframe(pd.DataFrame(criteria_data), use_container_width=True, hide_index=True)
@@ -746,7 +1866,7 @@ elif page == "⚠️ Risk Assessment":
     # ── Integrated Risk Assessment ──
     if prior:
         st.markdown("---")
-        st.markdown("### 🎯 Integrated Risk Assessment")
+        st.markdown("### Integrated Risk Assessment")
         
         integrated = integrated_risk_assessment(z_result, m_result, f_result)
         
@@ -771,11 +1891,11 @@ elif page == "⚠️ Risk Assessment":
         
         # Action items
         if integrated["flags"]:
-            st.markdown("#### 📋 Specific Findings & Recommended Actions")
+            st.markdown("#### Specific Findings & Recommended Actions")
             for flag in integrated["flags"]:
-                severity_icon = "🔴" if flag["severity"] == "critical" else "🟡"
+                severity_label = "CRITICAL" if flag["severity"] == "critical" else "WARNING"
                 st.markdown(f"""
-                **{severity_icon} {flag['model']}**: {flag['finding']}
+                **[{severity_label}] {flag['model']}**: {flag['finding']}
                 
                 **Standard Reference:** {flag['standard']}
                 
@@ -788,11 +1908,10 @@ elif page == "⚠️ Risk Assessment":
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE 6: EXECUTIVE REPORT
 # ══════════════════════════════════════════════════════════════════════════════
-elif page == "📋 Executive Report":
-    st.title("📋 Executive Summary Report")
-    
+elif page == "Executive Report":
+    st.title("Executive Summary Report")
     if not st.session_state.financial_data:
-        st.warning("⚠️ No financial data loaded. Go to Data Input first.")
+        st.warning("No financial data loaded. Go to Data Input first.")
         st.stop()
     
     data = st.session_state.financial_data
@@ -818,7 +1937,7 @@ elif page == "📋 Executive Report":
         r = ratios.get(key, {})
         health = assess_health(key, r.get("value"), industry)
         kcols[i].metric(
-            f"{health['emoji']} {r.get('name', key)}",
+            f"{r.get('name', key)}",
             format_number(r.get("value"), is_percentage=is_pct),
         )
     
@@ -831,17 +1950,17 @@ elif page == "📋 Executive Report":
             health_counts[h["status"]] += 1
     
     hcols = st.columns(3)
-    hcols[0].metric("🟢 Healthy", health_counts["good"])
-    hcols[1].metric("🟡 Warning", health_counts["warning"])
-    hcols[2].metric("🔴 Critical", health_counts["critical"])
+    hcols[0].metric("Healthy", health_counts["good"])
+    hcols[1].metric("Warning", health_counts["warning"])
+    hcols[2].metric("Critical", health_counts["critical"])
     
     # Cross-ratio insights
     insights = get_cross_ratio_insights(ratios, industry)
     if insights:
         st.markdown("### Key Findings")
         for insight in insights:
-            icon = {"critical": "🔴", "warning": "🟡", "positive": "🟢"}.get(insight["type"], "🔵")
-            st.markdown(f"{icon} **{insight['title']}**: {insight['detail']}")
+            label = {"critical": "[CRITICAL]", "warning": "[WARNING]", "positive": "[POSITIVE]"}.get(insight["type"], "")
+            st.markdown(f"**{label} {insight['title']}**: {insight['detail']}")
     
     # Risk scores
     if prior:
@@ -862,7 +1981,7 @@ elif page == "📋 Executive Report":
     
     st.markdown("---")
     st.markdown("### Export")
-    st.info("📄 PDF export functionality can be added with Claude Code. This is a planned enhancement for the refinement phase.")
+    st.info("PDF export functionality can be added with Claude Code. This is a planned enhancement for the refinement phase.")
     
     st.markdown("---")
     st.caption("Generated by Financial Health Assessment Tool | ACG6415 AUDIT Project | "

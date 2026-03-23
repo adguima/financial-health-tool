@@ -530,33 +530,33 @@ def assess_health(ratio_key: str, value, industry: str = None) -> dict:
         commentary: interpretive text
     """
     if value is None:
-        return {"status": "unavailable", "color": "#95A5A6", "emoji": "⚪", "commentary": "Insufficient data to calculate."}
+        return {"status": "unavailable", "color": "#95A5A6", "emoji": "", "commentary": "Insufficient data to calculate."}
     
     thresholds = INDUSTRY_THRESHOLDS.get(industry, DEFAULT_THRESHOLDS).get(ratio_key)
     if thresholds is None:
         thresholds = DEFAULT_THRESHOLDS.get(ratio_key)
     if thresholds is None:
-        return {"status": "neutral", "color": "#3498DB", "emoji": "🔵", "commentary": "No threshold defined for this ratio."}
+        return {"status": "neutral", "color": "#3498DB", "emoji": "", "commentary": "No threshold defined for this ratio."}
     
     crit_low, warn_low, warn_high, crit_high = thresholds
     
     # Check critical low
     if crit_low is not None and value < crit_low:
-        return {"status": "critical", "color": "#E74C3C", "emoji": "🔴", "commentary": f"Critically below industry threshold ({crit_low:.2f}). Immediate attention required."}
+        return {"status": "critical", "color": "#E74C3C", "emoji": "", "commentary": f"Critically below industry threshold ({crit_low:.2f}). Immediate attention required."}
     
     # Check warning low
     if warn_low is not None and value < warn_low:
-        return {"status": "warning", "color": "#F39C12", "emoji": "🟡", "commentary": f"Below healthy range for this industry (threshold: {warn_low:.2f}). Monitor closely."}
+        return {"status": "warning", "color": "#F39C12", "emoji": "", "commentary": f"Below healthy range for this industry (threshold: {warn_low:.2f}). Monitor closely."}
     
     # Check critical high (for ratios where too high is bad, like D/E)
     if crit_high is not None and value > crit_high:
-        return {"status": "critical", "color": "#E74C3C", "emoji": "🔴", "commentary": f"Critically above industry norm ({crit_high:.2f}). May indicate excessive risk."}
+        return {"status": "critical", "color": "#E74C3C", "emoji": "", "commentary": f"Critically above industry norm ({crit_high:.2f}). May indicate excessive risk."}
     
     # Check warning high
     if warn_high is not None and value > warn_high:
-        return {"status": "warning", "color": "#F39C12", "emoji": "🟡", "commentary": f"Above typical range for this industry (threshold: {warn_high:.2f}). Warrants investigation."}
+        return {"status": "warning", "color": "#F39C12", "emoji": "", "commentary": f"Above typical range for this industry (threshold: {warn_high:.2f}). Warrants investigation."}
     
-    return {"status": "good", "color": "#27AE60", "emoji": "🟢", "commentary": "Within healthy range for this industry."}
+    return {"status": "good", "color": "#27AE60", "emoji": "", "commentary": "Within healthy range for this industry."}
 
 
 def get_cross_ratio_insights(ratios: dict, industry: str = None) -> list:

@@ -446,7 +446,16 @@ if page == "Data Options":
         _loaded_co = SAMPLE_COMPANIES[st.session_state.prev_sample]
         _cy = _loaded_co.get("current_year", "2023")
         _py = _loaded_co.get("prior_year", "2022")
+
+        # Track previous year choice to detect changes
+        if "prev_year_choice" not in st.session_state:
+            st.session_state.prev_year_choice = _cy
+
         _year_choice = st.radio("Analyze year:", [_cy, _py], horizontal=True, key="sample_year_choice")
+
+        _year_changed = _year_choice != st.session_state.prev_year_choice
+        st.session_state.prev_year_choice = _year_choice
+
         if _year_choice == _py:
             st.session_state.financial_data = _loaded_co["prior"]
             st.session_state.prior_data = _loaded_co["current"]
@@ -457,6 +466,9 @@ if page == "Data Options":
             st.session_state.prior_data = _loaded_co["prior"]
             st.session_state.current_year_label = _cy
             st.session_state.prior_year_label = _py
+
+        if _year_changed:
+            st.rerun()
 
     st.markdown("---")
 
@@ -818,7 +830,7 @@ elif page == "Financial Ratios":
     benchmarks = get_size_adjusted_benchmarks(industry, company_size)
 
     # ── Compare mode selector ─────────────────────────────────────────────
-    _compare_mode = st.radio("Compare against:", ["Industry Peer", "Industry Median"],
+    _compare_mode = st.radio("Compare against:", ["Industry Median", "Industry Peer"],
                              horizontal=True, key="ratio_compare_mode")
 
     peer_ratios = None
@@ -947,9 +959,13 @@ elif page == "Financial Ratios":
 
         with c_name:
             _status_color = {"good": "#27AE60", "warning": "#F39C12", "critical": "#E74C3C"}.get(health["status"], "#95A5A6")
+            _status_note = health.get("commentary", "")
             st.markdown(f'<span style="display:inline-block;width:8px;height:8px;border-radius:50%;'
-                        f'background:{_status_color};margin-right:6px;vertical-align:middle;"></span>'
-                        f'**{ratio["name"]}**', unsafe_allow_html=True)
+                        f'background:{_status_color};margin-right:6px;vertical-align:middle;"'
+                        f' title="{_status_note}"></span>'
+                        f'**{ratio["name"]}**'
+                        f'<br><span style="font-size:0.75em;color:{_status_color};font-style:italic;">{_status_note}</span>',
+                        unsafe_allow_html=True)
 
         with c_val:
             st.markdown(f'<span style="font-size:1.15em;font-weight:600;color:#00c805;">{display_val}</span>',
@@ -2203,23 +2219,204 @@ elif page == "Executive Report":
     # Ratio health summary
     st.markdown("### Ratio Health Summary")
     health_counts = {"good": 0, "warning": 0, "critical": 0}
+    health_lists = {"good": [], "warning": [], "critical": []}
     for key, ratio in ratios.items():
         h = assess_health(key, ratio.get("value"), industry)
         if h["status"] in health_counts:
             health_counts[h["status"]] += 1
-    
+            health_lists[h["status"]].append(ratio.get("name", key))
+
     hcols = st.columns(3)
     hcols[0].metric("Healthy", health_counts["good"])
     hcols[1].metric("Warning", health_counts["warning"])
     hcols[2].metric("Critical", health_counts["critical"])
-    
-    # Cross-ratio insights
+
+    # List ratios under each health category if count > 0
+    if health_lists["good"]:
+        st.markdown(f'<div class="risk-good"><strong>Healthy Ratios:</strong> {", ".join(health_lists["good"])}</div>',
+                    unsafe_allow_html=True)
+    if health_lists["warning"]:
+        st.markdown(f'<div class="risk-warning"><strong>Warning Ratios:</strong> {", ".join(health_lists["warning"])}</div>',
+                    unsafe_allow_html=True)
+    if health_lists["critical"]:
+        st.markdown(f'<div class="risk-critical"><strong>Critical Ratios:</strong> {", ".join(health_lists["critical"])}</div>',
+                    unsafe_allow_html=True)
+
+    # Cross-ratio insights — comprehensive narrative
     insights = get_cross_ratio_insights(ratios, industry)
-    if insights:
-        st.markdown("### Key Findings")
-        for insight in insights:
-            label = {"critical": "[CRITICAL]", "warning": "[WARNING]", "positive": "[POSITIVE]"}.get(insight["type"], "")
-            st.markdown(f"**{label} {insight['title']}**: {insight['detail']}")
+    company_name = st.session_state.company_name or "The company"
+
+    st.markdown("### Key Findings")
+
+    # Build a comprehensive narrative from all available data
+    narrative_parts = []
+
+    # Opening — overall posture based on health distribution
+    total_rated = health_counts["good"] + health_counts["warning"] + health_counts["critical"]
+    if total_rated > 0:
+        good_pct = health_counts["good"] / total_rated * 100
+        if health_counts["critical"] > 0 and good_pct < 50:
+            narrative_parts.append(
+                f"{company_name} presents a **concerning financial profile**. Of the {total_rated} ratios evaluated, "
+                f"only {health_counts['good']} fall within healthy ranges while {health_counts['critical']} are in critical territory "
+                f"and {health_counts['warning']} warrant caution. This distribution suggests material areas requiring immediate attention."
+            )
+        elif health_counts["critical"] > 0:
+            narrative_parts.append(
+                f"{company_name} shows a **mixed financial profile**. While {health_counts['good']} of {total_rated} evaluated ratios "
+                f"are healthy, {health_counts['critical']} critical and {health_counts['warning']} warning indicators point to specific "
+                f"areas that merit closer examination."
+            )
+        elif health_counts["warning"] > 0:
+            narrative_parts.append(
+                f"{company_name} demonstrates a **generally sound financial position** with {health_counts['good']} of {total_rated} "
+                f"ratios in healthy territory. However, {health_counts['warning']} ratio(s) in the warning range suggest areas "
+                f"where performance could improve."
+            )
+        else:
+            narrative_parts.append(
+                f"{company_name} exhibits a **strong financial profile** across all {total_rated} evaluated ratios, with every "
+                f"metric falling within healthy industry ranges."
+            )
+
+    # Liquidity narrative
+    cr_val = ratios.get("current_ratio", {}).get("value")
+    qr_val = ratios.get("quick_ratio", {}).get("value")
+    cash_r = ratios.get("cash_ratio", {}).get("value")
+    if cr_val is not None:
+        if cr_val >= 1.5:
+            liq_text = f"Liquidity appears adequate with a current ratio of {cr_val:.2f}"
+            if qr_val is not None:
+                liq_text += f" and a quick ratio of {qr_val:.2f}"
+            liq_text += ", indicating the company can comfortably meet its short-term obligations."
+        elif cr_val >= 1.0:
+            liq_text = f"Liquidity is marginally sufficient (current ratio: {cr_val:.2f}), suggesting limited but adequate short-term coverage."
+        else:
+            liq_text = f"Liquidity is a concern with a current ratio of {cr_val:.2f}, indicating current liabilities exceed current assets."
+        narrative_parts.append(liq_text)
+
+    # Profitability narrative
+    nm = ratios.get("net_margin", {}).get("value")
+    gm = ratios.get("gross_margin", {}).get("value")
+    roe_val = ratios.get("roe", {}).get("value")
+    roa_val = ratios.get("roa", {}).get("value")
+    prof_pieces = []
+    if gm is not None:
+        prof_pieces.append(f"gross margin of {gm:.1%}")
+    if nm is not None:
+        prof_pieces.append(f"net margin of {nm:.1%}")
+    if roe_val is not None:
+        prof_pieces.append(f"return on equity of {roe_val:.1%}")
+    if roa_val is not None:
+        prof_pieces.append(f"return on assets of {roa_val:.1%}")
+    if prof_pieces:
+        prof_text = f"From a profitability standpoint, the company reports a {', '.join(prof_pieces)}. "
+        if nm is not None and nm < 0:
+            prof_text += "The negative bottom line is a significant concern and warrants investigation into cost structure and revenue sustainability."
+        elif nm is not None and nm > 0.10:
+            prof_text += "These margins reflect solid earnings power and effective cost management."
+        elif nm is not None:
+            prof_text += "While profitable, there may be room to improve operational efficiency."
+        narrative_parts.append(prof_text)
+
+    # Solvency narrative
+    dte_val = ratios.get("debt_to_equity", {}).get("value")
+    ic_val = ratios.get("interest_coverage", {}).get("value")
+    if dte_val is not None or ic_val is not None:
+        solv_text = "Regarding solvency, "
+        pieces = []
+        if dte_val is not None:
+            pieces.append(f"the debt-to-equity ratio stands at {dte_val:.2f}")
+        if ic_val is not None:
+            pieces.append(f"interest coverage is {ic_val:.2f}x")
+        solv_text += " and ".join(pieces) + ". "
+        if ic_val is not None and ic_val < 2.0:
+            solv_text += "The thin interest coverage raises going concern considerations and suggests the company may struggle to service its debt."
+        elif dte_val is not None and dte_val > 2.0:
+            solv_text += "The elevated leverage warrants monitoring, particularly if earnings face downward pressure."
+        else:
+            solv_text += "The capital structure appears manageable relative to the company's earnings capacity."
+        narrative_parts.append(solv_text)
+
+    # Efficiency narrative
+    dso_val = ratios.get("dso", {}).get("value")
+    inv_turn = ratios.get("inventory_turnover", {}).get("value")
+    ccc_val = ratios.get("cash_conversion_cycle", {}).get("value")
+    if dso_val is not None or inv_turn is not None or ccc_val is not None:
+        eff_text = "On the efficiency front, "
+        pieces = []
+        if dso_val is not None:
+            pieces.append(f"days sales outstanding is {dso_val:.0f} days")
+        if inv_turn is not None:
+            pieces.append(f"inventory turns over {inv_turn:.1f}x per year")
+        if ccc_val is not None:
+            pieces.append(f"the cash conversion cycle spans {ccc_val:.0f} days")
+        eff_text += ", ".join(pieces) + ". "
+        if ccc_val is not None and ccc_val > 80:
+            eff_text += "The extended cash cycle suggests the company takes a long time to convert its investments into cash, which could strain working capital."
+        elif dso_val is not None and dso_val > 60:
+            eff_text += "Elevated receivables collection times may signal credit risk or aggressive revenue recognition."
+        else:
+            eff_text += "These metrics suggest the company is managing its operating cycle effectively."
+        narrative_parts.append(eff_text)
+
+    # Integrate cross-ratio insights into the narrative
+    critical_insights = [i for i in insights if i["type"] == "critical"]
+    warning_insights = [i for i in insights if i["type"] == "warning"]
+    positive_insights = [i for i in insights if i["type"] == "positive"]
+
+    if critical_insights:
+        narrative_parts.append(
+            "**Critical findings** from cross-ratio analysis demand immediate attention: " +
+            " Additionally, ".join(f"{i['title'].lower()} — {i['detail']}" for i in critical_insights)
+        )
+    if warning_insights:
+        narrative_parts.append(
+            "**Areas of caution** identified through cross-ratio analysis include: " +
+            " Furthermore, ".join(f"{i['title'].lower()} — {i['detail']}" for i in warning_insights)
+        )
+    if positive_insights:
+        narrative_parts.append(
+            "**Positive indicators** from the analysis: " +
+            " ".join(i['detail'] for i in positive_insights)
+        )
+
+    # Risk model integration (if prior data available)
+    if prior:
+        z_result = calculate_altman_z_score(data)
+        m_result = calculate_beneish_m_score(data, prior)
+        f_result = calculate_piotroski_f_score(data, prior)
+        risk_pieces = []
+        if z_result.get("score") is not None:
+            risk_pieces.append(f"the Altman Z-Score of {z_result['score']:.2f} classifies the company in the {z_result.get('zone', 'N/A')} zone")
+        if m_result.get("score") is not None:
+            manip = "suggests possible earnings manipulation" if m_result["score"] > -1.78 else "does not indicate earnings manipulation"
+            risk_pieces.append(f"the Beneish M-Score of {m_result['score']:.2f} {manip}")
+        if f_result.get("score") is not None:
+            strength = "strong" if f_result["score"] >= 7 else "moderate" if f_result["score"] >= 4 else "weak"
+            risk_pieces.append(f"the Piotroski F-Score of {f_result['score']} signals {strength} fundamental strength")
+        if risk_pieces:
+            narrative_parts.append("From a risk modeling perspective, " + "; ".join(risk_pieces) + ".")
+
+    # Closing
+    if health_counts["critical"] > 0:
+        narrative_parts.append(
+            "**In summary**, the analysis reveals material financial risks that warrant substantive audit procedures "
+            "and close professional scrutiny. The critical indicators should be prioritized in the engagement team's risk assessment."
+        )
+    elif health_counts["warning"] > 0:
+        narrative_parts.append(
+            "**In summary**, the company's financial health is broadly acceptable but not without areas of concern. "
+            "The warning indicators should be factored into the risk assessment and may warrant expanded procedures in targeted areas."
+        )
+    else:
+        narrative_parts.append(
+            "**In summary**, the company presents a robust financial profile with no immediate red flags. "
+            "Standard audit procedures appear appropriate, though professional skepticism should be maintained throughout the engagement."
+        )
+
+    # Render the full narrative
+    st.markdown("\n\n".join(narrative_parts))
     
     # Risk scores
     if prior:

@@ -86,10 +86,10 @@ st.markdown("""
         font-size: 0.92rem;
     }
     .risk-good {
-        background-color: #f0faf4;
+        background-color: #e8f6fa;
         padding: 16px 20px;
         border-radius: 8px;
-        border-left: 3px solid #00c805;
+        border-left: 3px solid #00b4d8;
         margin: 12px 0;
         font-size: 0.92rem;
     }
@@ -111,7 +111,7 @@ st.markdown("""
         margin-right: 6px;
         vertical-align: middle;
     }
-    .dot-green { background-color: #00c805; }
+    .dot-green { background-color: #00b4d8; }
     .dot-yellow { background-color: #f5a623; }
     .dot-red { background-color: #e74c3c; }
     .dot-blue { background-color: #5ac8fa; }
@@ -179,7 +179,7 @@ with st.sidebar:
     _yr_label = st.session_state.current_year_label or ""
     _yr_line = f"<br><b>Year:</b> {_yr_label}" if _yr_label else ""
     if st.session_state.company_name:
-        st.markdown(f'<div style="background:#1e3a1e;color:#00c805;padding:12px 14px;border-radius:6px;'
+        st.markdown(f'<div style="background:#0a2a3a;color:#00b4d8;padding:12px 14px;border-radius:6px;'
                     f'font-size:1.25rem;margin:0 0 4px 0;font-weight:700;text-align:left;'
                     f'font-family:Aptos,Calibri,sans-serif;">'
                     f'{st.session_state.company_name}</div>', unsafe_allow_html=True)
@@ -187,7 +187,7 @@ with st.sidebar:
                     f'<b>Industry:</b> {st.session_state.industry}<br>'
                     f'<b>Size:</b> {st.session_state.company_size}{_yr_line}</div>', unsafe_allow_html=True)
     elif st.session_state.financial_data is not None:
-        st.markdown('<div style="background:#1e3a1e;color:#00c805;padding:12px 14px;border-radius:6px;'
+        st.markdown('<div style="background:#0a2a3a;color:#00b4d8;padding:12px 14px;border-radius:6px;'
                     'font-size:1.25rem;margin:0 0 4px 0;font-weight:700;text-align:left;'
                     'font-family:Aptos,Calibri,sans-serif;">'
                     'Manually loaded</div>', unsafe_allow_html=True)
@@ -201,8 +201,8 @@ with st.sidebar:
     for p in _PAGES:
         if p == st.session_state.current_page:
             st.markdown(
-                f'<div style="background:#1e3a1e;color:#00c805;padding:10px 16px;margin:0 0 14px 0;'
-                f'border-radius:6px;border-left:3px solid #00c805;font-size:1rem;'
+                f'<div style="background:#0a2a3a;color:#00b4d8;padding:10px 16px;margin:0 0 14px 0;'
+                f'border-radius:6px;border-left:3px solid #00b4d8;font-size:1rem;'
                 f'text-align:center;font-weight:500;font-family:Aptos,Calibri,Segoe UI,sans-serif;">{p}</div>',
                 unsafe_allow_html=True)
         else:
@@ -968,7 +968,7 @@ elif page == "Financial Ratios":
                         unsafe_allow_html=True)
 
         with c_val:
-            st.markdown(f'<span style="font-size:1.15em;font-weight:600;color:#00c805;">{display_val}</span>',
+            st.markdown(f'<span style="font-size:1.15em;font-weight:600;color:#00b4d8;">{display_val}</span>',
                         unsafe_allow_html=True)
 
         with c_peer:
@@ -1238,7 +1238,7 @@ elif page == "Financial Ratios":
         with h_name:
             st.markdown('<span style="font-size:0.8em;color:#999;text-transform:uppercase;letter-spacing:0.05em;">Ratio</span>', unsafe_allow_html=True)
         with h_val:
-            st.markdown(f'<span style="font-size:0.8em;color:#00c805;text-transform:uppercase;letter-spacing:0.05em;">{_co_ticker}</span>', unsafe_allow_html=True)
+            st.markdown(f'<span style="font-size:0.8em;color:#00b4d8;text-transform:uppercase;letter-spacing:0.05em;">{_co_ticker}</span>', unsafe_allow_html=True)
         with h_peer:
             st.markdown(f'<span style="font-size:0.8em;color:#999;text-transform:uppercase;letter-spacing:0.05em;">{_peer_ticker}</span>', unsafe_allow_html=True)
 
@@ -1280,7 +1280,7 @@ elif page == "Financial Ratios":
             name=st.session_state.company_name or "Company",
             x=_dp_labels,
             y=_dp_vals,
-            marker_color=["#5ac8fa", "#00c805", "#e74c3c", "#1a1a1a"],
+            marker_color=["#5ac8fa", "#00b4d8", "#e74c3c", "#1a1a1a"],
             text=[f"{margin_val:.1%}", f"{turnover_val:.2f}x", f"{leverage_val:.2f}x", f"{roe_val:.1%}"],
             textposition="outside",
             cliponaxis=False,
@@ -1519,7 +1519,7 @@ elif page == "Benchmarking":
             theta=valid_labels + [valid_labels[0]],
             fill="toself", name=st.session_state.company_name or "Company",
             fillcolor="rgba(0, 200, 5, 0.15)",
-            line=dict(color="#00c805"),
+            line=dict(color="#00b4d8"),
         ))
         if bm_peer_ratios and peer_vals:
             fig.add_trace(go.Scatterpolar(
@@ -1571,8 +1571,8 @@ elif page == "Benchmarking":
     if ranking_data:
         # Build styled HTML table
         _hdr_style = 'style="padding:10px 14px;font-size:1.05rem;font-weight:700;border-bottom:2px solid #e8e8e8;text-align:left;font-family:Aptos,Calibri,sans-serif;"'
-        _co_hdr = 'style="padding:10px 14px;font-size:1.05rem;font-weight:700;border-bottom:2px solid #e8e8e8;text-align:left;color:#00c805;font-family:Aptos,Calibri,sans-serif;"'
-        _co_cell = 'style="padding:8px 14px;font-size:1.05rem;border-bottom:1px solid #f0f0f0;color:#00c805;font-weight:500;font-family:Aptos,Calibri,sans-serif;"'
+        _co_hdr = 'style="padding:10px 14px;font-size:1.05rem;font-weight:700;border-bottom:2px solid #e8e8e8;text-align:left;color:#00b4d8;font-family:Aptos,Calibri,sans-serif;"'
+        _co_cell = 'style="padding:8px 14px;font-size:1.05rem;border-bottom:1px solid #f0f0f0;color:#00b4d8;font-weight:500;font-family:Aptos,Calibri,sans-serif;"'
         _cell_style = 'style="padding:8px 14px;font-size:1.05rem;border-bottom:1px solid #f0f0f0;font-family:Aptos,Calibri,sans-serif;"'
         _peer_hdr = 'style="padding:10px 14px;font-size:1.05rem;font-weight:700;border-bottom:2px solid #e8e8e8;text-align:left;color:#5ac8fa;font-family:Aptos,Calibri,sans-serif;"'
         _peer_cell = 'style="padding:8px 14px;font-size:1.05rem;border-bottom:1px solid #f0f0f0;color:#5ac8fa;font-weight:500;font-family:Aptos,Calibri,sans-serif;"'
@@ -1650,7 +1650,7 @@ elif page == "Benchmarking":
             fig.add_trace(go.Bar(
                 name=st.session_state.company_name or "Company",
                 y=_h2h_labels, x=_h2h_co,
-                orientation="h", marker_color="#00c805",
+                orientation="h", marker_color="#00b4d8",
             ))
             fig.add_trace(go.Bar(
                 name=bm_peer_label,
@@ -1814,7 +1814,7 @@ elif page == "DCF Valuation":
         x=x_labels,
         y=y_values,
         connector={"line": {"color": "rgb(63, 63, 63)"}},
-        increasing={"marker": {"color": "#00c805"}},
+        increasing={"marker": {"color": "#00b4d8"}},
         decreasing={"marker": {"color": "#e74c3c"}},
         totals={"marker": {"color": "#1a1a1a"}},
         text=[f"${d['value']/1e6:,.0f}M" for d in decomp] + [f"${dcf_result['enterprise_value']/1e6:,.0f}M"],
@@ -1968,7 +1968,7 @@ elif page == "DCF Valuation":
     fig_sc = go.Figure(go.Bar(
         x=_sc_names,
         y=_sc_evs,
-        marker_color=["#5ac8fa", "#00c805", "#e74c3c"],
+        marker_color=["#5ac8fa", "#00b4d8", "#e74c3c"],
         text=[format_number(v, is_dollar=True) for v in _sc_evs],
         textposition="outside",
         cliponaxis=False,
@@ -2038,7 +2038,7 @@ elif page == "Risk Assessment":
             fig = go.Figure(go.Bar(
                 x=[c["variable"] for c in z_result["components"]],
                 y=_z_vals,
-                marker_color=["#00c805" if c["weighted"] > 0 else "#e74c3c" for c in z_result["components"]],
+                marker_color=["#00b4d8" if c["weighted"] > 0 else "#e74c3c" for c in z_result["components"]],
                 text=[f"{c['weighted']:.3f}" for c in z_result["components"]],
                 textposition="outside",
                 cliponaxis=False,

@@ -9,6 +9,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
+from datetime import date
 from utils.ratios import calculate_all_ratios, assess_health, get_cross_ratio_insights
 from utils.dcf import calculate_wacc, run_dcf, sensitivity_analysis, run_scenarios, validate_assumptions
 from utils.risk_models import (
@@ -273,6 +274,126 @@ def _get_industry_peers(industry, exclude_name=None):
                 continue
             peers[name] = co
     return peers
+
+
+def generate_pdf_report(data, prior, industry, ratios, benchmarks, company_name):
+    """Generate a professional HTML report (print-to-PDF ready) and return bytes."""
+
+    def _esc(text):
+        if text is None:
+            return "N/A"
+        return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    # Key metrics
+    key_metrics = [
+        ("Current Ratio", "current_ratio", False, False),
+        ("Net Margin", "net_margin", False, True),
+        ("Return on Equity", "roe", False, True),
+        ("Debt-to-Equity", "debt_to_equity", False, False),
+        ("Interest Coverage", "interest_coverage", False, False),
+    ]
+    metrics_rows = ""
+    for label, key, is_dollar, is_pct in key_metrics:
+        r = ratios.get(key, {})
+        val = r.get("value")
+        val_fmt = format_number(val, is_dollar=is_dollar, is_percentage=is_pct)
+        health = assess_health(key, val, industry)
+        status = health.get("status", "unknown").capitalize()
+        color = {"Good": "#27AE60", "Warning": "#F39C12", "Critical": "#E74C3C"}.get(status, "#666")
+        metrics_rows += f'<tr><td>{_esc(label)}</td><td style="font-weight:600;">{_esc(val_fmt)}</td><td style="color:{color};font-weight:600;">{status}</td></tr>\n'
+
+    # Health counts
+    health_counts = {"good": 0, "warning": 0, "critical": 0}
+    for key, ratio in ratios.items():
+        h = assess_health(key, ratio.get("value"), industry)
+        if h["status"] in health_counts:
+            health_counts[h["status"]] += 1
+
+    # Key findings
+    insights = get_cross_ratio_insights(ratios, industry)
+    findings_html = ""
+    if insights:
+        for insight in insights:
+            badge = {"critical": "CRITICAL", "warning": "WARNING", "positive": "POSITIVE"}.get(insight["type"], "")
+            badge_color = {"critical": "#E74C3C", "warning": "#F39C12", "positive": "#27AE60"}.get(insight["type"], "#666")
+            findings_html += (f'<p><span style="background:{badge_color};color:#fff;padding:2px 6px;border-radius:3px;'
+                              f'font-size:0.8em;font-weight:600;">{badge}</span> '
+                              f'<strong>{_esc(insight["title"])}</strong>: {_esc(insight["detail"])}</p>\n')
+
+    # Risk assessment
+    risk_html = ""
+    if prior:
+        z_result = calculate_altman_z_score(data)
+        m_result = calculate_beneish_m_score(data, prior)
+        f_result = calculate_piotroski_f_score(data, prior)
+        integrated = integrated_risk_assessment(z_result, m_result, f_result)
+        risk_color = {"High": "#E74C3C", "Moderate": "#F39C12", "Low": "#27AE60"}.get(integrated["risk_level"], "#666")
+
+        risk_html = f"""
+        <h2>Risk Assessment</h2>
+        <table>
+            <tr><td>Altman Z-Score</td><td style="font-weight:600;">{z_result['z_score']:.2f}</td><td>{_esc(z_result.get('zone', 'N/A'))}</td></tr>
+            <tr><td>Beneish M-Score</td><td style="font-weight:600;">{m_result['m_score']:.2f}</td><td>{_esc(m_result['classification'])}</td></tr>
+            <tr><td>Piotroski F-Score</td><td style="font-weight:600;">{f_result['f_score']}/9</td><td>{_esc(f_result['classification'])}</td></tr>
+        </table>
+        <p style="margin-top:12px;"><strong>Overall Risk Level: </strong>
+        <span style="color:{risk_color};font-weight:700;font-size:1.1em;">{_esc(integrated['risk_level'])}</span></p>
+        <p>{_esc(integrated['overall_assessment'])}</p>
+        """
+        if integrated.get("flags"):
+            risk_html += "<h3>Action Items</h3><ul>\n"
+            for flag in integrated["flags"]:
+                risk_html += f'<li><strong>{_esc(flag["model"])}</strong>: {_esc(flag["finding"])} &rarr; <em>{_esc(flag["action"])}</em></li>\n'
+            risk_html += "</ul>\n"
+
+    report_date = date.today().strftime("%B %d, %Y")
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>Financial Health Report - {_esc(company_name)}</title>
+<style>
+@media print {{ @page {{ margin: 0.75in; }} body {{ font-size: 10pt; }} }}
+body {{ font-family: Aptos, Calibri, Arial, sans-serif; color: #333; max-width: 800px; margin: 0 auto; padding: 40px 20px; line-height: 1.6; }}
+h1 {{ color: #1a1a1a; border-bottom: 2px solid #1a1a1a; padding-bottom: 8px; }}
+h2 {{ color: #1a1a1a; margin-top: 28px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }}
+h3 {{ color: #444; }}
+table {{ width: 100%; border-collapse: collapse; margin: 12px 0; }}
+th, td {{ text-align: left; padding: 8px 12px; border-bottom: 1px solid #eee; }}
+th {{ background: #f8f8f8; font-weight: 600; }}
+.header-meta {{ color: #666; font-size: 0.95em; }}
+.health-bar {{ display: flex; gap: 24px; margin: 8px 0; }}
+.health-bar span {{ padding: 6px 16px; border-radius: 4px; font-weight: 600; }}
+.disclaimer {{ margin-top: 40px; padding-top: 16px; border-top: 1px solid #ddd; font-size: 0.8em; color: #999; font-style: italic; }}
+</style></head><body>
+<h1>Financial Health Assessment Report</h1>
+<p class="header-meta"><strong>Company:</strong> {_esc(company_name or 'N/A')} &nbsp;|&nbsp;
+<strong>Industry:</strong> {_esc(industry)} &nbsp;|&nbsp;
+<strong>Date:</strong> {report_date}</p>
+
+<h2>Key Metrics</h2>
+<table><tr><th>Metric</th><th>Value</th><th>Status</th></tr>
+{metrics_rows}</table>
+
+<h2>Ratio Health Summary</h2>
+<div class="health-bar">
+<span style="background:#eafaf1;color:#27AE60;">Healthy: {health_counts['good']}</span>
+<span style="background:#fef9e7;color:#F39C12;">Warning: {health_counts['warning']}</span>
+<span style="background:#fdedec;color:#E74C3C;">Critical: {health_counts['critical']}</span>
+</div>
+
+<h2>Key Findings</h2>
+{findings_html if findings_html else '<p style="color:#999;">No significant findings.</p>'}
+
+{risk_html}
+
+<div class="disclaimer">
+This report is generated by the Financial Health Assessment Tool for educational purposes
+(ACG6415 AUDIT Project). It supports professional judgment but does not replace it. All findings
+should be evaluated by qualified professionals in the context of the specific engagement and
+applicable professional standards.
+</div>
+</body></html>"""
+
+    return html.encode("utf-8")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -604,6 +725,53 @@ if page == "Data Options":
             st.session_state.prev_sample = "— Select —"
             st.rerun()
     
+    # ── File Format Guide ─────────────────────────────────────────────────
+    st.markdown("---")
+    with st.expander("CSV / XLSX File Format Guide", expanded=False):
+        st.markdown("""
+Your file must contain a **Field** column and one or more **year columns** (4-digit headers like `2024`, `2023`).
+
+**Required structure:**
+
+| Field | 2024 | 2023 |
+|---|---|---|
+| Revenue | 50000000 | 45000000 |
+| COGS | 30000000 | 27000000 |
+| ... | ... | ... |
+
+**Accepted field names** (case-insensitive; spaces or underscores both work):
+
+| Category | Fields |
+|---|---|
+| **Balance Sheet** | Total Current Assets, Total Current Liabilities, Total Assets, Total Liabilities, Total Equity, Cash (or Cash & Equivalents), Inventory, Accounts Receivable, Accounts Payable, Long Term Debt, Retained Earnings, PPE Net, Intangibles |
+| **Income Statement** | Revenue, COGS (or Cost of Goods Sold), Operating Expenses, Operating Income, EBIT, Interest Expense, Tax Expense, Net Income, Depreciation (or Depreciation & Amortization), SGA Expense |
+| **Cash Flow** | Operating Cash Flow, Capital Expenditures (or Capex) |
+| **Market Data** | Market Cap (or Market Capitalization), Shares Outstanding |
+
+**Optional metadata rows** (auto-detected from the file):
+
+| Field | Value |
+|---|---|
+| Industry | Technology, Healthcare, etc. |
+| Company Size | Large Cap, Mid Cap, Small Cap |
+| Company Name | Your Company Inc. |
+
+**File naming conventions:**
+
+The company name is auto-detected from the file name (unless a `Company Name` metadata row is provided). Supported formats:
+
+| File Name | Detected Company Name |
+|---|---|
+| `AAPL - Apple Inc.csv` | AAPL - Apple Inc |
+| `AppleInc_AAPL.xlsx` | AAPL - AppleInc |
+| `MyCompany.csv` | MyCompany |
+
+**Tips:**
+- Enter values as plain numbers (no `$` signs or commas in the data cells).
+- Include at least two year columns to enable trend / prior-year comparisons.
+- At minimum, provide **Total Assets**, **Total Liabilities**, **Total Equity**, and **Revenue** for a meaningful analysis.
+""")
+
     # Validation
     if st.session_state.financial_data:
         data = st.session_state.financial_data
@@ -775,7 +943,7 @@ elif page == "Financial Ratios":
         health = assess_health(key, val, industry)
 
         # Build the row using columns
-        c_name, c_val, c_peer, c_trend = st.columns([3, 2, 2, 1.2])
+        c_name, c_val, c_peer = st.columns([3, 2, 2])
 
         with c_name:
             _status_color = {"good": "#27AE60", "warning": "#F39C12", "critical": "#E74C3C"}.get(health["status"], "#95A5A6")
@@ -794,24 +962,6 @@ elif page == "Financial Ratios":
                     _pfmt = format_number(_pv, is_dollar=is_dollar, is_percentage=is_pct)
                     st.markdown(f'<span style="color:#1a1a1a;font-weight:500;">{_pfmt}</span>',
                                 unsafe_allow_html=True)
-                else:
-                    st.markdown('<span style="color:#ccc;">--</span>', unsafe_allow_html=True)
-            else:
-                st.markdown('<span style="color:#ccc;">--</span>', unsafe_allow_html=True)
-
-        with c_trend:
-            if prior_ratios and key in prior_ratios:
-                _prev = prior_ratios[key].get("value")
-                if _prev is not None and val is not None:
-                    _chg = val - _prev
-                    if key in _lower_is_better:
-                        _chg = -_chg  # flip for display: positive = improvement
-                    if abs(_chg) < 0.005 and not is_dollar:
-                        st.markdown('<span style="color:#999;">--</span>', unsafe_allow_html=True)
-                    elif _chg > 0:
-                        st.markdown('<span style="color:#27AE60;">&#9650;</span>', unsafe_allow_html=True)
-                    else:
-                        st.markdown('<span style="color:#E74C3C;">&#9660;</span>', unsafe_allow_html=True)
                 else:
                     st.markdown('<span style="color:#ccc;">--</span>', unsafe_allow_html=True)
             else:
@@ -1068,15 +1218,13 @@ elif page == "Financial Ratios":
     def _render_table_header(peer_label):
         _co_ticker = _extract_ticker(st.session_state.company_name)
         _peer_ticker = _extract_ticker(peer_label) if peer_label else "Peer"
-        h_name, h_val, h_peer, h_trend = st.columns([3, 2, 2, 1.2])
+        h_name, h_val, h_peer = st.columns([3, 2, 2])
         with h_name:
             st.markdown('<span style="font-size:0.8em;color:#999;text-transform:uppercase;letter-spacing:0.05em;">Ratio</span>', unsafe_allow_html=True)
         with h_val:
             st.markdown(f'<span style="font-size:0.8em;color:#00c805;text-transform:uppercase;letter-spacing:0.05em;">{_co_ticker}</span>', unsafe_allow_html=True)
         with h_peer:
             st.markdown(f'<span style="font-size:0.8em;color:#999;text-transform:uppercase;letter-spacing:0.05em;">{_peer_ticker}</span>', unsafe_allow_html=True)
-        with h_trend:
-            st.markdown('<span style="font-size:0.8em;color:#999;text-transform:uppercase;letter-spacing:0.05em;">Trend</span>', unsafe_allow_html=True)
 
     for cat_name in ["Liquidity", "Profitability", "Solvency", "Efficiency", "Earnings Quality"]:
         if cat_name not in categories:
@@ -1641,34 +1789,27 @@ elif page == "DCF Valuation":
     # Waterfall chart
     st.markdown("### Value Decomposition")
     decomp = dcf_result["decomposition"]
+    measures = ["relative"] * len(decomp) + ["total"]
+    x_labels = [d["label"] for d in decomp] + ["Enterprise Value"]
+    y_values = [d["value"] for d in decomp] + [0]  # total bar auto-sums
     fig = go.Figure(go.Waterfall(
         name="", orientation="v",
-        measure=["relative"] * (len(decomp) - 1) + ["total"] if len(decomp) > 1 else ["total"],
-        x=[d["label"] for d in decomp] + ["Enterprise Value"],
-        y=[d["value"] for d in decomp] + [dcf_result["enterprise_value"]],
+        measure=measures,
+        x=x_labels,
+        y=y_values,
         connector={"line": {"color": "rgb(63, 63, 63)"}},
         increasing={"marker": {"color": "#00c805"}},
+        decreasing={"marker": {"color": "#e74c3c"}},
         totals={"marker": {"color": "#1a1a1a"}},
-    ))
-    # Fix: waterfall needs proper measures
-    _ev_vals = [d["value"] for d in decomp]
-    fig = go.Figure(go.Bar(
-        x=[d["label"] for d in decomp],
-        y=_ev_vals,
-        marker_color=["#00c805"] * (len(decomp) - 1) + ["#1a1a1a"],
-        text=[f"${d['value']/1e6:,.0f}M ({d['pct_of_ev']:.0%})" for d in decomp],
+        text=[f"${d['value']/1e6:,.0f}M" for d in decomp] + [f"${dcf_result['enterprise_value']/1e6:,.0f}M"],
         textposition="outside",
         cliponaxis=False,
     ))
-    _ev_max = max(abs(v) for v in _ev_vals) if _ev_vals else 1
-    _ev_min = min(v for v in _ev_vals) if _ev_vals else 0
     fig.update_layout(
         title="Enterprise Value Composition",
         yaxis_title="Present Value ($)",
         height=400,
-        bargap=0.3,
         margin=dict(t=50, b=40),
-        yaxis=dict(range=[min(0, _ev_min * 1.15), _ev_max * 1.25]),
     )
     st.plotly_chart(fig, use_container_width=True)
     
@@ -1706,7 +1847,125 @@ elif page == "DCF Valuation":
         height=450,
     )
     st.plotly_chart(fig, use_container_width=True)
-    
+
+    # ── Scenario Analysis ─────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### Scenario Analysis: Base / Bull / Bear")
+
+    _base_wacc = wacc_result["wacc"]
+
+    # Pre-populate scenario defaults
+    _scenario_defaults = {
+        "Base": {
+            "growth_rates": list(growth_rates),
+            "ebitda_margins": list(margins),
+            "wacc": _base_wacc,
+            "tgr": tgr,
+            "probability": 0.50,
+        },
+        "Bull": {
+            "growth_rates": [g + 0.02 for g in growth_rates],
+            "ebitda_margins": [m + 0.02 for m in margins],
+            "wacc": _base_wacc - 0.01,
+            "tgr": tgr + 0.005,
+            "probability": 0.25,
+        },
+        "Bear": {
+            "growth_rates": [g - 0.02 for g in growth_rates],
+            "ebitda_margins": [m - 0.02 for m in margins],
+            "wacc": _base_wacc + 0.02,
+            "tgr": tgr - 0.005,
+            "probability": 0.25,
+        },
+    }
+
+    scenario_tabs = st.tabs(["Base Case", "Bull Case", "Bear Case"])
+    scenarios = {}
+    _tab_keys = ["Base", "Bull", "Bear"]
+
+    for idx, (tab, sname) in enumerate(zip(scenario_tabs, _tab_keys)):
+        _sd = _scenario_defaults[sname]
+        with tab:
+            st.markdown(f"**{sname} Case Assumptions**")
+            _sc_prob = st.number_input(
+                f"Probability (%)", value=_sd["probability"] * 100,
+                min_value=0.0, max_value=100.0, step=5.0, format="%.0f",
+                key=f"sc_prob_{sname}"
+            ) / 100
+            _sc_gcols = st.columns(n_years)
+            _sc_growth = []
+            for i in range(n_years):
+                with _sc_gcols[i]:
+                    _gv = st.number_input(
+                        f"Gr Yr{i+1} (%)", value=_sd["growth_rates"][i] * 100,
+                        step=0.5, format="%.1f", key=f"sc_gr_{sname}_{i}"
+                    ) / 100
+                    _sc_growth.append(_gv)
+            _sc_mcols = st.columns(n_years)
+            _sc_margins = []
+            for i in range(n_years):
+                with _sc_mcols[i]:
+                    _mv = st.number_input(
+                        f"Mg Yr{i+1} (%)", value=_sd["ebitda_margins"][i] * 100,
+                        step=0.5, format="%.1f", key=f"sc_mg_{sname}_{i}"
+                    ) / 100
+                    _sc_margins.append(_mv)
+            _sc_wcols = st.columns(2)
+            with _sc_wcols[0]:
+                _sc_wacc = st.number_input(
+                    "WACC (%)", value=_sd["wacc"] * 100,
+                    step=0.1, format="%.2f", key=f"sc_wacc_{sname}"
+                ) / 100
+            with _sc_wcols[1]:
+                _sc_tgr = st.number_input(
+                    "TGR (%)", value=_sd["tgr"] * 100,
+                    step=0.1, format="%.2f", key=f"sc_tgr_{sname}"
+                ) / 100
+            scenarios[sname] = {
+                "growth_rates": _sc_growth,
+                "ebitda_margins": _sc_margins,
+                "wacc": _sc_wacc,
+                "tgr": _sc_tgr,
+                "probability": _sc_prob,
+            }
+
+    # Run scenarios
+    scenario_result = run_scenarios(base_rev, scenarios, capex_pct, nwc_pct, da_pct, shares_out, net_debt_val)
+
+    st.markdown("#### Scenario Results")
+    _sr_cols = st.columns(3)
+    for i, sname in enumerate(_tab_keys):
+        _sr = scenario_result["scenarios"][sname]
+        with _sr_cols[i]:
+            st.markdown(f"**{sname} Case** (p={scenarios[sname]['probability']:.0%})")
+            st.metric("Enterprise Value", format_number(_sr["enterprise_value"], is_dollar=True))
+            st.metric("Equity Value", format_number(_sr["equity_value"], is_dollar=True))
+            _ps = _sr.get("per_share_value")
+            st.metric("Per Share", f"${_ps:,.2f}" if _ps else "N/A")
+
+    st.markdown(f"**Probability-Weighted Enterprise Value:** "
+                f"{format_number(scenario_result['weighted_enterprise_value'], is_dollar=True)}")
+
+    # Bar chart comparing scenarios
+    _sc_names = list(scenario_result["scenarios"].keys())
+    _sc_evs = [scenario_result["scenarios"][s]["enterprise_value"] for s in _sc_names]
+    fig_sc = go.Figure(go.Bar(
+        x=_sc_names,
+        y=_sc_evs,
+        marker_color=["#5ac8fa", "#00c805", "#e74c3c"],
+        text=[format_number(v, is_dollar=True) for v in _sc_evs],
+        textposition="outside",
+        cliponaxis=False,
+    ))
+    fig_sc.update_layout(
+        title="Scenario Comparison: Enterprise Value",
+        yaxis_title="Enterprise Value ($)",
+        height=350,
+        bargap=0.3,
+        margin=dict(t=50, b=40),
+    )
+    st.plotly_chart(fig_sc, use_container_width=True)
+
     # Projection table
     st.markdown("### Projection Detail")
     proj_df = pd.DataFrame(dcf_result["projections"])
@@ -1981,7 +2240,13 @@ elif page == "Executive Report":
     
     st.markdown("---")
     st.markdown("### Export")
-    st.info("PDF export functionality can be added with Claude Code. This is a planned enhancement for the refinement phase.")
+    report_bytes = generate_pdf_report(data, prior, industry, ratios, benchmarks,
+                                       st.session_state.company_name)
+    _report_fname = f"financial_health_report_{(st.session_state.company_name or 'company').replace(' ', '_')}.html"
+    st.download_button("Download Report", data=report_bytes,
+                       file_name=_report_fname,
+                       mime="text/html")
+    st.caption("Opens in your browser — use Print > Save as PDF for a PDF copy.")
     
     st.markdown("---")
     st.caption("Generated by Financial Health Assessment Tool | ACG6415 AUDIT Project | "

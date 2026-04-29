@@ -167,7 +167,7 @@ if "prior_year_label" not in st.session_state:
 if "current_page" not in st.session_state:
     st.session_state.current_page = "Executive Report"
 
-_PAGES = ["Executive Report", "Financial Ratios", "Benchmarking",
+_PAGES = ["Executive Report", "Statements", "Financial Ratios", "Benchmarking",
           "DCF Valuation", "Risk Assessment", "Data Options"]
 
 with st.sidebar:
@@ -809,6 +809,149 @@ The company name is auto-detected from the file name (unless a `Company Name` me
                 st.success("Total assets populated")
             else:
                 st.error("Total assets required for analysis")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE: FINANCIAL STATEMENTS
+# ══════════════════════════════════════════════════════════════════════════════
+elif page == "Statements":
+    st.title("Financial Statements")
+    if not st.session_state.financial_data:
+        st.warning("No financial data loaded. Go to Data Options to enter data or load a sample company.")
+        st.stop()
+
+    data = st.session_state.financial_data
+    prior = st.session_state.prior_data
+    cy_label = st.session_state.current_year_label or "Current"
+    py_label = st.session_state.prior_year_label or "Prior"
+    has_prior = bool(prior)
+
+    def _fmt(d, key):
+        if d is None:
+            return "—"
+        v = d.get(key)
+        return format_number(v, is_dollar=True) if v is not None else "—"
+
+    def _fmt_calc(val):
+        return format_number(val, is_dollar=True) if val is not None else "—"
+
+    def _calc(d, *keys):
+        """Sum/diff helper: returns None if any required key missing."""
+        if d is None:
+            return None
+        vals = []
+        for k in keys:
+            v = d.get(k)
+            if v is None:
+                return None
+            vals.append(v)
+        return vals
+
+    def _render_statement(title, rows):
+        """Render a statement as an HTML table. Each row: (label, key|callable, is_subtotal)."""
+        col_header_prior = f'<th style="text-align:right;padding:10px 16px;border-bottom:2px solid #1a1a1a;font-weight:600;">{py_label}</th>' if has_prior else ""
+        html = [
+            f'<h3 style="margin-top:24px;margin-bottom:8px;color:#1a1a1a;font-weight:600;">{title}</h3>',
+            '<table style="width:100%;border-collapse:collapse;font-family:Aptos,Calibri,sans-serif;font-size:0.95rem;">',
+            '<thead><tr>',
+            '<th style="text-align:left;padding:10px 16px;border-bottom:2px solid #1a1a1a;font-weight:600;">Line Item</th>',
+            f'<th style="text-align:right;padding:10px 16px;border-bottom:2px solid #1a1a1a;font-weight:600;">{cy_label}</th>',
+            col_header_prior,
+            '</tr></thead><tbody>',
+        ]
+        for label, ref, is_subtotal in rows:
+            label_style = "padding:8px 16px;border-bottom:1px solid #eee;"
+            val_style = "padding:8px 16px;border-bottom:1px solid #eee;text-align:right;font-variant-numeric:tabular-nums;"
+            if is_subtotal:
+                label_style += "font-weight:700;border-top:1px solid #888;"
+                val_style += "font-weight:700;border-top:1px solid #888;"
+            elif label.startswith("  "):
+                label_style += "padding-left:32px;color:#444;"
+
+            cur_v = ref(data) if callable(ref) else data.get(ref)
+            cur_disp = _fmt_calc(cur_v) if callable(ref) else _fmt(data, ref)
+
+            prior_cell = ""
+            if has_prior:
+                pr_v = ref(prior) if callable(ref) else prior.get(ref)
+                pr_disp = _fmt_calc(pr_v) if callable(ref) else _fmt(prior, ref)
+                prior_cell = f'<td style="{val_style}">{pr_disp}</td>'
+
+            html.append(
+                f'<tr><td style="{label_style}">{label}</td>'
+                f'<td style="{val_style}">{cur_disp}</td>{prior_cell}</tr>'
+            )
+        html.append('</tbody></table>')
+        st.markdown("".join(html), unsafe_allow_html=True)
+
+    def _gross_profit(d):
+        v = _calc(d, "revenue", "cogs")
+        return v[0] - v[1] if v else None
+
+    def _pretax(d):
+        v = _calc(d, "operating_income", "interest_expense")
+        return v[0] - v[1] if v else None
+
+    def _total_liab_equity(d):
+        v = _calc(d, "total_liabilities", "total_equity")
+        return v[0] + v[1] if v else None
+
+    def _fcf(d):
+        v = _calc(d, "operating_cash_flow", "capital_expenditures")
+        return v[0] - v[1] if v else None
+
+    # ── Income Statement ────────────────────────────────────────────────────
+    income_rows = [
+        ("Revenue", "revenue", False),
+        ("Cost of Goods Sold", "cogs", False),
+        ("Gross Profit", _gross_profit, True),
+        ("Operating Expenses", "operating_expenses", False),
+        ("Depreciation & Amortization", "depreciation", False),
+        ("Operating Income (EBIT)", "operating_income", True),
+        ("Interest Expense", "interest_expense", False),
+        ("Pretax Income", _pretax, True),
+        ("Tax Expense", "tax_expense", False),
+        ("Net Income", "net_income", True),
+    ]
+    _render_statement("Income Statement", income_rows)
+
+    # ── Balance Sheet ───────────────────────────────────────────────────────
+    balance_rows = [
+        ("Assets", "__header__", False),
+        ("  Cash & Equivalents", "cash", False),
+        ("  Accounts Receivable", "accounts_receivable", False),
+        ("  Inventory", "inventory", False),
+        ("Total Current Assets", "total_current_assets", True),
+        ("  Property, Plant & Equipment (Net)", "ppe_net", False),
+        ("  Intangibles", "intangibles", False),
+        ("Total Assets", "total_assets", True),
+        ("Liabilities & Equity", "__header__", False),
+        ("  Accounts Payable", "accounts_payable", False),
+        ("Total Current Liabilities", "total_current_liabilities", True),
+        ("  Long-Term Debt", "long_term_debt", False),
+        ("Total Liabilities", "total_liabilities", True),
+        ("  Retained Earnings", "retained_earnings", False),
+        ("Total Equity", "total_equity", True),
+        ("Total Liabilities & Equity", _total_liab_equity, True),
+    ]
+    # Strip the section-header rows (they shouldn't show a value column)
+    balance_rows_clean = []
+    for label, ref, sub in balance_rows:
+        if ref == "__header__":
+            balance_rows_clean.append((label, lambda d: None, True))
+        else:
+            balance_rows_clean.append((label, ref, sub))
+    _render_statement("Balance Sheet", balance_rows_clean)
+
+    # ── Statement of Cash Flows ─────────────────────────────────────────────
+    cash_flow_rows = [
+        ("Cash Flow from Operations", "operating_cash_flow", True),
+        ("Capital Expenditures", "capital_expenditures", False),
+        ("Free Cash Flow (OCF − CapEx)", _fcf, True),
+    ]
+    _render_statement("Statement of Cash Flows", cash_flow_rows)
+
+    st.caption("All figures shown in reporting currency. Subtotals are bold; em-dash (—) indicates the underlying data point was not provided.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -848,7 +848,9 @@ elif page == "Statements":
         return vals
 
     def _render_statement(title, rows):
-        """Render a statement as an HTML table. Each row: (label, key|callable, is_subtotal)."""
+        """Render a statement as an HTML table. Each row: (label, key|callable, is_subtotal).
+        Use ref=='__header__' for section dividers. Rows where both current and prior
+        values are zero/missing are hidden."""
         col_header_prior = f'<th style="text-align:right;padding:10px 16px;border-bottom:2px solid #1a1a1a;font-weight:600;">{py_label}</th>' if has_prior else ""
         html = [
             f'<h3 style="margin-top:24px;margin-bottom:8px;color:#1a1a1a;font-weight:600;">{title}</h3>',
@@ -859,7 +861,27 @@ elif page == "Statements":
             col_header_prior,
             '</tr></thead><tbody>',
         ]
+        colspan = 3 if has_prior else 2
         for label, ref, is_subtotal in rows:
+            if ref == "__header__":
+                html.append(
+                    f'<tr><td colspan="{colspan}" '
+                    f'style="padding:14px 16px 6px 16px;font-weight:700;color:#1a1a1a;'
+                    f'border-bottom:1px solid #888;letter-spacing:0.02em;">{label}</td></tr>'
+                )
+                continue
+
+            cur_v = ref(data) if callable(ref) else data.get(ref)
+            pr_v = None
+            if has_prior:
+                pr_v = ref(prior) if callable(ref) else prior.get(ref)
+
+            # Hide rows where every visible value is zero or missing
+            cur_blank = cur_v in (None, 0)
+            pr_blank = pr_v in (None, 0) if has_prior else True
+            if cur_blank and pr_blank:
+                continue
+
             label_style = "padding:8px 16px;border-bottom:1px solid #eee;"
             val_style = "padding:8px 16px;border-bottom:1px solid #eee;text-align:right;font-variant-numeric:tabular-nums;"
             if is_subtotal:
@@ -868,14 +890,8 @@ elif page == "Statements":
             elif label.startswith("  "):
                 label_style += "padding-left:32px;color:#444;"
 
-            cur_v = ref(data) if callable(ref) else data.get(ref)
-            cur_disp = _fmt_calc(cur_v) if callable(ref) else _fmt(data, ref)
-
-            prior_cell = ""
-            if has_prior:
-                pr_v = ref(prior) if callable(ref) else prior.get(ref)
-                pr_disp = _fmt_calc(pr_v) if callable(ref) else _fmt(prior, ref)
-                prior_cell = f'<td style="{val_style}">{pr_disp}</td>'
+            cur_disp = _fmt_calc(cur_v)
+            prior_cell = f'<td style="{val_style}">{_fmt_calc(pr_v)}</td>' if has_prior else ""
 
             html.append(
                 f'<tr><td style="{label_style}">{label}</td>'
@@ -934,14 +950,7 @@ elif page == "Statements":
         ("Total Equity", "total_equity", True),
         ("Total Liabilities & Equity", _total_liab_equity, True),
     ]
-    # Strip the section-header rows (they shouldn't show a value column)
-    balance_rows_clean = []
-    for label, ref, sub in balance_rows:
-        if ref == "__header__":
-            balance_rows_clean.append((label, lambda d: None, True))
-        else:
-            balance_rows_clean.append((label, ref, sub))
-    _render_statement("Balance Sheet", balance_rows_clean)
+    _render_statement("Balance Sheet", balance_rows)
 
     # ── Statement of Cash Flows ─────────────────────────────────────────────
     cash_flow_rows = [
@@ -951,7 +960,7 @@ elif page == "Statements":
     ]
     _render_statement("Statement of Cash Flows", cash_flow_rows)
 
-    st.caption("All figures shown in reporting currency. Subtotals are bold; em-dash (—) indicates the underlying data point was not provided.")
+    st.caption("All figures shown in reporting currency. Subtotals are bold. Line items with no reported value are hidden.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
